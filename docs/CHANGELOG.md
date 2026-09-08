@@ -6,6 +6,38 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Persona e resposta em linguagem natural** (`src/bot/persona.js`, novo).
+  As respostas de busca eram templates fixos — sempre o mesmo texto engessado, com
+  cara de listagem de resultado, não de atendimento.
+
+  - `persona.js` concentra `NOME_BOT` ("Ana"), `NOME_LOJA` ("Loja de Pijamas"),
+    `TOM_DE_VOZ` e `SAUDACAO`. **Os nomes são provisórios** — a dona da loja escolhe os
+    de verdade depois, e trocar as constantes já muda saudação e prompts.
+  - `gerarRespostaBusca(produtosEncontrados, historico)` em `services/claude.js`: uma
+    segunda chamada à API, separada da extração, que escreve o texto usando a persona.
+    Recebe a lista de produtos **já filtrada pelo código** — a IA escreve, mas nunca
+    decide o que existe. O system prompt manda mencionar só os produtos da lista, com
+    os preços, cores e tamanhos exatos, e nunca inventar ou sugerir outros. Mesmo
+    princípio anti-alucinação da extração, agora na geração.
+  - Busca vazia: a mesma função gera uma resposta empática, com instrução explícita de
+    não citar nem sugerir produto nenhum (sugerir alternativas fica pra depois).
+  - Saudação na primeira mensagem de cada sessão é **determinística**, prefixada pelo
+    código quando `obterHistorico(from)` está vazio. Pedir ao modelo que se apresente
+    daria "quase sempre"; assim é sempre — e nunca no meio da conversa.
+  - `resumirBusca` continua gravando no histórico o resumo curto e sem formatação. O
+    cliente lê linguagem natural, o modelo lê o resumo enxuto: propósitos diferentes,
+    textos diferentes.
+  - Se a geração falhar, a resposta cai no template determinístico de antes
+    (`montarRespostaBusca`): feio, mas sempre correto. Só o `buscar_produto` gera texto
+    por IA; os outros branches seguem com texto fixo.
+  - `formatarPreco` saiu de `conversation.js` pra `src/utils/formatarPreco.js`, porque
+    agora também formata os preços que vão no prompt — o modelo recebe "R$ 59,90"
+    pronto, em vez de ter que formatar número.
+
+- `src/test-persona.js`: primeira mensagem com 1 resultado (confere saudação, nome e
+  preço exatos do catálogo, e ausência dos outros produtos) e segunda mensagem sem
+  resultado (confere que a saudação não se repete e que nenhum produto é sugerido).
+
 - **Filtros acumulados por conversa** (`src/bot/filtrosState.js` + `sessionStore`).
   Passar o histórico pra Claude a cada chamada já ajudava, mas depender só disso é
   frágil: quanto mais a conversa cresce, mais tokens custa e mais chance do modelo
@@ -101,6 +133,10 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
     `validarContraCatalogo` já fazia, pra poder ser testado sem depender do catálogo real.
   - A comparação de `tecido` na busca passou a ser bidirecional, que era como a validação
     já comparava. Antes um tecido podia ser aceito na validação e não bater na busca.
+
+- `src/test-session.js` passou a separar as chamadas de interpretação das de geração
+  antes de conferir o payload: agora cada mensagem gera duas chamadas à API, e o teste
+  olhava pelo índice.
 
 - `src/test-normalizacao.js`: cobre o caso do enunciado
   (`buscarProdutos({ estacao: "verao" }, catalog)` acha o Pijama Curto Listrado) e os

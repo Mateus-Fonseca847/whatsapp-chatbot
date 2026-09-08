@@ -1,4 +1,4 @@
-import { interpretarPedido } from "../services/claude.js";
+import { interpretarPedido, gerarRespostaBusca } from "../services/claude.js";
 import { buscarProdutos, validarContraCatalogo } from "./catalogSearch.js";
 import {
   obterHistorico,
@@ -7,11 +7,11 @@ import {
   salvarFiltros
 } from "./sessionStore.js";
 import { mesclarFiltros } from "./filtrosState.js";
+import { SAUDACAO } from "./persona.js";
+import { formatarPreco } from "../utils/formatarPreco.js";
 
-function formatarPreco(preco) {
-  return `R$ ${preco.toFixed(2).replace(".", ",")}`;
-}
-
+// Fallback: texto montado pelo código, usado quando a geração pela IA falha. Feio,
+// mas sempre correto — os dados saem direto do catálogo.
 function montarRespostaBusca(produtos) {
   if (produtos.length === 0) {
     return "Não encontrei nenhum produto com esses critérios. Quer tentar descrever de outro jeito?";
@@ -39,8 +39,9 @@ function resumirBusca(produtos) {
 }
 
 // Devolve { texto, resumo }: `texto` é o que o cliente recebe, `resumo` é o que
-// guardamos como turno "assistant" no histórico.
-function montarResposta(filtros) {
+// guardamos como turno "assistant" no histórico. São propósitos diferentes — o cliente
+// lê linguagem natural, o modelo lê o resumo enxuto na próxima mensagem.
+async function montarResposta(filtros, conversa) {
   if (!filtros) {
     const texto = "Desculpa, não consegui entender direito. Pode reformular sua mensagem?";
     return { texto, resumo: texto };
@@ -49,7 +50,14 @@ function montarResposta(filtros) {
   switch (filtros.intencao) {
     case "buscar_produto": {
       const produtos = buscarProdutos(filtros);
-      return { texto: montarRespostaBusca(produtos), resumo: resumirBusca(produtos) };
+
+      // A busca é do código; só o texto é da IA. Se a geração falhar, cai no template.
+      const gerado = await gerarRespostaBusca(produtos, conversa);
+
+      return {
+        texto: gerado ?? montarRespostaBusca(produtos),
+        resumo: resumirBusca(produtos)
+      };
     }
 
     case "ver_carrinho":
@@ -75,6 +83,9 @@ export async function processarMensagem(from, textoCliente) {
   const historico = obterHistorico(from);
   const filtrosConhecidos = obterFiltros(from);
 
+  // Histórico vazio = ninguém falou nada ainda nessa sessão, então é a primeira mensagem
+  const primeiraMensagem = historico.length === 0;
+
   // A IA só precisa apontar o que é novo na mensagem atual; o acúmulo é nosso.
   const filtrosNovos = await interpretarPedido(textoCliente, historico, filtrosConhecidos);
 
@@ -89,12 +100,18 @@ export async function processarMensagem(from, textoCliente) {
     salvarFiltros(from, filtros);
   }
 
-  const { texto, resumo } = montarResposta(filtros);
+  // A conversa que a IA vê pra escrever a resposta termina na mensagem atual do cliente
+  const conversa = [...historico, { role: "user", content: textoCliente }];
+  const { texto, resumo } = await montarResposta(filtros, conversa);
+
+  // A apresentação é prefixada pelo código, não pedida ao modelo: assim ela acontece
+  // sempre na primeira mensagem, e nunca se repete no meio da conversa.
+  const textoFinal = primeiraMensagem ? `${SAUDACAO} ${texto}` : texto;
 
   // Guardamos as duas pontas da troca pra que a próxima mensagem desse cliente
   // chegue à Claude API já com o contexto do que foi conversado.
   adicionarMensagem(from, "user", textoCliente);
   adicionarMensagem(from, "assistant", resumo);
 
-  return texto;
+  return textoFinal;
 }

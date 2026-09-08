@@ -12,12 +12,16 @@ import { obterHistorico } from "./bot/sessionStore.js";
 const FROM = "5511999999999";
 
 // Espiona as chamadas à API sem alterar o comportamento: guarda o payload e repassa adiante.
+// Cada mensagem gera DUAS chamadas — a interpretação do pedido e a geração da resposta.
+// Aqui só interessam as de interpretação, que são as que recebem o histórico.
 const payloadsEnviados = [];
 const postOriginal = axios.post;
 axios.post = function (url, data, config) {
   payloadsEnviados.push(data);
   return postOriginal.call(this, url, data, config);
 };
+
+const ehInterpretacao = (payload) => payload?.system?.startsWith("Você extrai informações");
 
 console.log("--- Mensagem 1: 'quero um pijama de inverno' ---");
 const resposta1 = await processarMensagem(FROM, "quero um pijama de inverno");
@@ -32,8 +36,12 @@ const historicoFinal = obterHistorico(FROM);
 console.log("\nHistórico final da sessão:");
 console.log(JSON.stringify(historicoFinal, null, 2));
 
-const segundoPayload = payloadsEnviados[1];
-console.log("\nMessages enviadas na 2ª chamada à Claude API:");
+const interpretacoes = payloadsEnviados.filter(ehInterpretacao);
+const segundoPayload = interpretacoes[1];
+console.log(
+  `\n(${payloadsEnviados.length} chamadas à API no total, ${interpretacoes.length} de interpretação)`
+);
+console.log("Messages enviadas na 2ª interpretação:");
 console.log(JSON.stringify(segundoPayload?.messages, null, 2));
 
 console.log("\n--- Resultado ---");
@@ -43,7 +51,7 @@ console.log(
   `(${historicoFinal.length})`
 );
 console.log(
-  "2ª chamada recebeu o histórico no payload:",
+  "2ª interpretação recebeu o histórico no payload:",
   (segundoPayload?.messages?.length ?? 0) > 1,
   `(${segundoPayload?.messages?.length ?? 0} mensagens)`
 );
