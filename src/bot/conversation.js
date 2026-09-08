@@ -8,7 +8,7 @@ function formatarPreco(preco) {
 
 function montarRespostaBusca(produtos) {
   if (produtos.length === 0) {
-    return "Não encontrei nenhum produto com esses critérios 😕 Quer tentar descrever de outro jeito?";
+    return "Não encontrei nenhum produto com esses critérios. Quer tentar descrever de outro jeito?";
   }
 
   const linhas = produtos.map((p, i) => {
@@ -21,7 +21,7 @@ function montarRespostaBusca(produtos) {
 
 function montarResposta(filtros) {
   if (!filtros) {
-    return "Desculpa, não consegui entender direito 😅 Pode reformular sua mensagem?";
+    return "Desculpa, não consegui entender direito. Pode reformular sua mensagem?";
   }
 
   switch (filtros.intencao) {
@@ -32,7 +32,7 @@ function montarResposta(filtros) {
 
     case "ver_carrinho":
     case "finalizar_pedido":
-      return "Essa parte do carrinho ainda está sendo construída — chega em breve! 🛠️";
+      return "Essa parte do carrinho ainda está sendo construída — chega em breve!";
 
     case "duvida_geral":
       return "Posso te ajudar a encontrar pijamas! Me conta o que você procura (tamanho, cor, estação do ano).";
