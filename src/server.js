@@ -2,6 +2,8 @@ import express from "express";
 import dotenv from "dotenv";
 dotenv.config();
 
+import { processarMensagem } from "./bot/conversation.js";
+
 const app = express();
 app.use(express.json());
 
@@ -35,6 +37,13 @@ app.post("/webhook", async (req, res) => {
 
   console.log(`Mensagem de ${from}: ${text}`);
 
+  if (!text) return; // áudio, imagem, sticker: ainda não tratamos
+
+  // O `from` identifica a sessão do cliente, pra que o bot lembre do que já foi dito
+  const resposta = await processarMensagem(from, text);
+  console.log(`Resposta para ${from}: ${resposta}`);
+
+  // TODO: enviar a resposta de volta pelo WhatsApp (src/services/whatsapp.js)
 });
 
 app.listen(PORT, () => {

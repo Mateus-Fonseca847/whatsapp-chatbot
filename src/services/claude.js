@@ -27,7 +27,7 @@ function limparRespostaJSON(texto) {
   return texto.replace(/```json\n?|```\n?/g, "").trim();
 }
 
-export async function interpretarPedido(textoCliente) {
+export async function interpretarPedido(textoCliente, historico = []) {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error(
       "ANTHROPIC_API_KEY não encontrada. Verifique se o arquivo .env existe na raiz do projeto e se a chave está preenchida."
@@ -41,7 +41,9 @@ export async function interpretarPedido(textoCliente) {
         model: MODEL,
         max_tokens: 300,
         system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: textoCliente }]
+        // O histórico vem antes da mensagem atual pra que o modelo entenda
+        // perguntas de acompanhamento ("prefiro tamanho 8") no contexto certo.
+        messages: [...historico, { role: "user", content: textoCliente }]
       },
       {
         headers: {

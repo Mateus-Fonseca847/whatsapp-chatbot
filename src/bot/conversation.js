@@ -1,5 +1,6 @@
 import { interpretarPedido } from "../services/claude.js";
 import { buscarProdutos } from "./catalogSearch.js";
+import { obterHistorico, adicionarMensagem } from "./sessionStore.js";
 
 function formatarPreco(preco) {
   return `R$ ${preco.toFixed(2).replace(".", ",")}`;
@@ -18,9 +19,7 @@ function montarRespostaBusca(produtos) {
   return `Encontrei ${produtos.length} produto(s):\n\n${linhas.join("\n\n")}`;
 }
 
-export async function processarMensagem(textoCliente) {
-  const filtros = await interpretarPedido(textoCliente);
-
+function montarResposta(filtros) {
   if (!filtros) {
     return "Desculpa, não consegui entender direito 😅 Pode reformular sua mensagem?";
   }
@@ -41,4 +40,17 @@ export async function processarMensagem(textoCliente) {
     default:
       return "Não entendi muito bem o que você precisa. Pode me dar mais detalhes?";
   }
+}
+
+export async function processarMensagem(from, textoCliente) {
+  const historico = obterHistorico(from);
+  const filtros = await interpretarPedido(textoCliente, historico);
+  const resposta = montarResposta(filtros);
+
+  // Guardamos as duas pontas da troca pra que a próxima mensagem desse cliente
+  // chegue à Claude API já com o contexto do que foi conversado.
+  adicionarMensagem(from, "user", textoCliente);
+  adicionarMensagem(from, "assistant", resposta);
+
+  return resposta;
 }
