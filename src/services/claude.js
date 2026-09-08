@@ -21,13 +21,35 @@ Regras importantes:
 - Para categoria "feminino", "masculino" ou "plus size", use os tamanhos padrão (PP, P, M, G, GG) quando mencionados.
 - Use null nos campos que não estiverem claros na mensagem. Nunca invente informação que o cliente não disse além do que essas regras permitem.`;
 
+function montarSystemPrompt(filtrosConhecidos) {
+  // Só interessa ao modelo o que de fato está preenchido. `intencao` fica de fora:
+  // ela vale só pra mensagem em que foi dita e induziria o modelo a repeti-la.
+  const confirmados = Object.fromEntries(
+    Object.entries(filtrosConhecidos ?? {}).filter(
+      ([campo, valor]) => campo !== "intencao" && valor !== null && valor !== undefined
+    )
+  );
+
+  // Primeira mensagem da conversa (ou nada confirmado ainda): prompt base.
+  if (Object.keys(confirmados).length === 0) {
+    return SYSTEM_PROMPT;
+  }
+
+  // Dizendo ao modelo o que já está confirmado, ele não precisa relembrar a conversa
+  // inteira — só apontar o que mudou. O acúmulo em si é feito por mesclarFiltros.
+  return `${SYSTEM_PROMPT}
+
+Filtros já confirmados nesta conversa: ${JSON.stringify(confirmados)}.
+Extraia da mensagem atual apenas informações novas ou que contradigam o que já foi dito; use null pro que não mudou.`;
+}
+
 function limparRespostaJSON(texto) {
   // Às vezes o modelo envolve o JSON em ```json ... ``` mesmo quando pedimos pra não fazer isso.
   // Essa função remove essa "casca" antes de tentar interpretar.
   return texto.replace(/```json\n?|```\n?/g, "").trim();
 }
 
-export async function interpretarPedido(textoCliente, historico = []) {
+export async function interpretarPedido(textoCliente, historico = [], filtrosConhecidos = null) {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error(
       "ANTHROPIC_API_KEY não encontrada. Verifique se o arquivo .env existe na raiz do projeto e se a chave está preenchida."
@@ -40,7 +62,7 @@ export async function interpretarPedido(textoCliente, historico = []) {
       {
         model: MODEL,
         max_tokens: 300,
-        system: SYSTEM_PROMPT,
+        system: montarSystemPrompt(filtrosConhecidos),
         // O histórico vem antes da mensagem atual pra que o modelo entenda
         // perguntas de acompanhamento ("prefiro tamanho 8") no contexto certo.
         messages: [...historico, { role: "user", content: textoCliente }]
