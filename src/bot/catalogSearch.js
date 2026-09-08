@@ -1,5 +1,6 @@
 import { catalog } from "../data/catalog.js";
 import { encontrarFamiliaDeCor } from "./colorFamilies.js";
+import { normalizarTexto } from "../utils/normalizarTexto.js";
 
 // Campos de texto livre ("tecido", "cor") são os que a IA mais inventa: ela já
 // devolveu tecido: "pijama", que não é tecido nenhum. Com os filtros persistindo na
@@ -8,28 +9,29 @@ import { encontrarFamiliaDeCor } from "./colorFamilies.js";
 // Campos de domínio fechado (categoria, estacao, intencao) já são restringidos pelo
 // prompt, e tamanho/preco_maximo variam legitimamente sem existir no catálogo.
 
-function tecidoExisteNoCatalogo(tecido, catalogo) {
-  const alvo = String(tecido).toLowerCase().trim();
+function tecidoBate(tecidoProduto, tecidoBuscado) {
+  const alvo = normalizarTexto(tecidoBuscado);
   if (!alvo) return false;
 
   // Correspondência parcial nos dois sentidos: "algodão" bate com "algodão egípcio",
   // e "malha fria" bate com "malha".
-  return catalogo.some((produto) => {
-    const tecidoProduto = produto.tecido.toLowerCase();
-    return tecidoProduto.includes(alvo) || alvo.includes(tecidoProduto);
-  });
+  const doProduto = normalizarTexto(tecidoProduto);
+  return doProduto.includes(alvo) || alvo.includes(doProduto);
+}
+
+function corBate(corProduto, familiaCores) {
+  const doProduto = normalizarTexto(corProduto);
+  return familiaCores.some((corDaFamilia) => doProduto.includes(corDaFamilia));
+}
+
+function tecidoExisteNoCatalogo(tecido, catalogo) {
+  return catalogo.some((produto) => tecidoBate(produto.tecido, tecido));
 }
 
 function corExisteNoCatalogo(cor, catalogo) {
-  const alvo = String(cor).toLowerCase().trim();
-  if (!alvo) return false;
-
   // Mesma regra da busca: a cor vale se algum produto tiver uma cor da mesma família.
-  const familiaCores = encontrarFamiliaDeCor(alvo);
-  return catalogo.some((produto) => {
-    const corProduto = produto.cor.toLowerCase();
-    return familiaCores.some((corDaFamilia) => corProduto.includes(corDaFamilia));
-  });
+  const familiaCores = encontrarFamiliaDeCor(cor);
+  return catalogo.some((produto) => corBate(produto.cor, familiaCores));
 }
 
 export function validarContraCatalogo(filtros, catalogo = catalog) {
@@ -48,9 +50,18 @@ export function validarContraCatalogo(filtros, catalogo = catalog) {
   return validados;
 }
 
-export function buscarProdutos(filtros) {
-  return catalog.filter((produto) => {
-    if (filtros.categoria && produto.categoria !== filtros.categoria) {
+export function buscarProdutos(filtros, catalogo = catalog) {
+  // A cor buscada é a mesma pra todos os produtos: resolve a família uma vez só.
+  const familiaCores = filtros.cor ? encontrarFamiliaDeCor(filtros.cor) : null;
+
+  return catalogo.filter((produto) => {
+    // Toda comparação de texto passa por normalizarTexto nos DOIS lados: o catálogo
+    // grava "verão" e o prompt manda a IA devolver "verao" — sem isso, nenhuma busca
+    // por roupa de verão encontrava o Pijama Curto Listrado.
+    if (
+      filtros.categoria &&
+      normalizarTexto(produto.categoria) !== normalizarTexto(filtros.categoria)
+    ) {
       return false;
     }
 
@@ -58,18 +69,15 @@ export function buscarProdutos(filtros) {
       return false;
     }
 
-    if (filtros.cor) {
-      const familiaCores = encontrarFamiliaDeCor(filtros.cor);
-      const corDoProduto = produto.cor.toLowerCase();
-      const corBate = familiaCores.some((cor) => corDoProduto.includes(cor));
-      if (!corBate) return false;
-    }
-
-    if (filtros.tecido && !produto.tecido.toLowerCase().includes(filtros.tecido.toLowerCase())) {
+    if (familiaCores && !corBate(produto.cor, familiaCores)) {
       return false;
     }
 
-    if (filtros.estacao && produto.estacao !== filtros.estacao) {
+    if (filtros.tecido && !tecidoBate(produto.tecido, filtros.tecido)) {
+      return false;
+    }
+
+    if (filtros.estacao && normalizarTexto(produto.estacao) !== normalizarTexto(filtros.estacao)) {
       return false;
     }
 

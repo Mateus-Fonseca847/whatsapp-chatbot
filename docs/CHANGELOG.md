@@ -78,6 +78,34 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Corrigido
 
+- **Busca insensível a acento** (`src/utils/normalizarTexto.js`, novo). O catálogo grava
+  `estacao: "verão"`, mas o `SYSTEM_PROMPT` instrui o modelo a devolver `"verao"`, e
+  `buscarProdutos` comparava com `!==` exato — resultado: nenhuma busca por roupa de
+  verão encontrava o Pijama Curto Listrado. A mesma fragilidade valia pra `cor` e
+  `tecido`, cujos `.includes()` só baixavam a caixa.
+
+  `normalizarTexto(texto)` remove acentos (`NFD` + faixa de diacríticos) e baixa a
+  caixa. Passou a ser aplicado **nos dois lados** de toda comparação de texto:
+
+  - `catalogSearch.js`: igualdade de `estacao` e `categoria`, e as comparações parciais
+    de `cor` e `tecido` — tanto na busca quanto na validação contra o catálogo.
+  - `colorFamilies.js`: `encontrarFamiliaDeCor` normaliza a cor buscada e as listas de
+    `FAMILIAS_DE_COR` (normalizadas uma vez na carga do módulo, não a cada busca).
+    As listas continuam escritas com acento, que é o que se lê melhor ao editar.
+
+  Só pra comparação: o texto exibido ao cliente continua vindo do catálogo, com acento.
+
+  Dois ajustes que vieram junto, por consistência:
+
+  - `buscarProdutos(filtros, catalogo = catalog)` aceita um catálogo por parâmetro, como
+    `validarContraCatalogo` já fazia, pra poder ser testado sem depender do catálogo real.
+  - A comparação de `tecido` na busca passou a ser bidirecional, que era como a validação
+    já comparava. Antes um tecido podia ser aceito na validação e não bater na busca.
+
+- `src/test-normalizacao.js`: cobre o caso do enunciado
+  (`buscarProdutos({ estacao: "verao" }, catalog)` acha o Pijama Curto Listrado) e os
+  equivalentes de `cor`, `tecido` e `categoria`. Não chama a API.
+
 - **Filtro inventado pela IA não entra mais na sessão** (`validarContraCatalogo`, em
   `src/bot/catalogSearch.js`). Resolve o "Problema conhecido" registrado junto com os
   filtros acumulados: em "quero um pijama de inverno" o modelo devolvia

@@ -1,3 +1,5 @@
+import { normalizarTexto } from "../utils/normalizarTexto.js";
+
 // Agrupamentos de cores que "conversam" entre si visualmente.
 // Ajuste essas listas conforme os produtos reais da loja forem cadastrados —
 // isso é uma regra de negócio, não uma verdade absoluta de teoria das cores.
@@ -9,10 +11,22 @@ const FAMILIAS_DE_COR = [
   ["branco", "preto", "cinza", "bege", "nude", "marrom"]
 ];
 
-export function encontrarFamiliaDeCor(corBuscada) {
-  const corNormalizada = corBuscada.toLowerCase().trim();
+// As listas acima são escritas com acento, pra ficarem legíveis pra quem edita.
+// A comparação, porém, é sempre sem acento — "lilás" e "lilas" precisam bater.
+// Normalizamos uma vez na carga do módulo, não a cada busca.
+const FAMILIAS_NORMALIZADAS = FAMILIAS_DE_COR.map((familia) =>
+  familia.map((cor) => normalizarTexto(cor))
+);
 
-  const familiaEncontrada = FAMILIAS_DE_COR.find((familia) =>
+// Devolve as cores da família já normalizadas: o retorno serve só pra comparação,
+// nunca pra exibir ao cliente — o texto mostrado vem do catálogo.
+export function encontrarFamiliaDeCor(corBuscada) {
+  const corNormalizada = normalizarTexto(corBuscada);
+
+  // Cor vazia casaria com qualquer família (todo texto "inclui" string vazia)
+  if (!corNormalizada) return [];
+
+  const familiaEncontrada = FAMILIAS_NORMALIZADAS.find((familia) =>
     familia.some((cor) => corNormalizada.includes(cor) || cor.includes(corNormalizada))
   );
 
