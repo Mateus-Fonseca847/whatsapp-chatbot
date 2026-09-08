@@ -76,11 +76,31 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
   na chamada a `processarMensagem` — antes o número era apenas logado. O envio da
   resposta de volta pelo WhatsApp continua pendente (`src/services/whatsapp.js`).
 
-### Problema conhecido
+### Corrigido
 
-- Um filtro extraído errado agora gruda na conversa inteira. Em "quero um pijama de
-  inverno" o modelo às vezes devolve `tecido: "pijama"` — pijama não é tecido, e
-  nenhum produto do catálogo casa com isso. Antes o erro valia só pra aquela mensagem;
-  com o acúmulo, ele passa a zerar todas as buscas seguintes da mesma conversa.
-  A causa é o `SYSTEM_PROMPT`, que não restringe `tecido` aos tecidos do catálogo —
-  não foi mexido aqui pra não misturar com esta mudança.
+- **Filtro inventado pela IA não entra mais na sessão** (`validarContraCatalogo`, em
+  `src/bot/catalogSearch.js`). Resolve o "Problema conhecido" registrado junto com os
+  filtros acumulados: em "quero um pijama de inverno" o modelo devolvia
+  `tecido: "pijama"` — pijama não é tecido, nenhum produto casava com isso, e como o
+  valor persistia na sessão ele zerava todas as buscas seguintes da mesma conversa.
+
+  Agora `conversation.js` valida a resposta da Claude contra o catálogo **antes** de
+  `mesclarFiltros`, então um valor sem correspondência nunca chega a ser guardado:
+
+  - `tecido`: aceito só se algum produto tiver um tecido que bata por correspondência
+    parcial nos dois sentidos (`"algodão"` bate com `"algodão egípcio"` e vice-versa).
+  - `cor`: aceita só se algum produto tiver cor da mesma família, reaproveitando
+    `encontrarFamiliaDeCor` — a mesma regra que a busca já usa.
+  - Sem correspondência, o campo vira `null` e simplesmente não sobrescreve nada.
+
+  A validação cobre só os campos de texto livre. `categoria` e `estacao` já têm domínio
+  fechado no prompt, e `tamanho`/`preco_maximo` variam legitimamente sem existir no
+  catálogo (pedir tamanho GG que a loja não tem é uma busca vazia válida, não um erro
+  de extração).
+
+  Efeito colateral visível: "oi, voces vendem pijama?" passou a listar os 3 produtos
+  do catálogo, em vez de não encontrar nada.
+
+- `src/test-validacao.js`: teste de `validarContraCatalogo` com o objeto do bug real
+  (`{ tecido: "pijama", estacao: "inverno", cor: "arco-íris" }`). Não chama a API, pra
+  não depender da variabilidade da IA.

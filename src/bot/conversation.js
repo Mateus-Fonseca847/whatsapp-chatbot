@@ -1,5 +1,5 @@
 import { interpretarPedido } from "../services/claude.js";
-import { buscarProdutos } from "./catalogSearch.js";
+import { buscarProdutos, validarContraCatalogo } from "./catalogSearch.js";
 import {
   obterHistorico,
   adicionarMensagem,
@@ -78,9 +78,13 @@ export async function processarMensagem(from, textoCliente) {
   // A IA só precisa apontar o que é novo na mensagem atual; o acúmulo é nosso.
   const filtrosNovos = await interpretarPedido(textoCliente, historico, filtrosConhecidos);
 
+  // Antes de mesclar: campo que a IA inventou e não existe no catálogo vira null aqui,
+  // e assim nunca entra na sessão pra contaminar as próximas mensagens.
+  const filtrosValidados = validarContraCatalogo(filtrosNovos);
+
   // Falha na API (filtrosNovos === null): não mexemos nos filtros da sessão, pra não
   // perder o que o cliente já tinha confirmado por causa de um erro passageiro.
-  const filtros = filtrosNovos ? mesclarFiltros(filtrosConhecidos, filtrosNovos) : null;
+  const filtros = filtrosValidados ? mesclarFiltros(filtrosConhecidos, filtrosValidados) : null;
   if (filtros) {
     salvarFiltros(from, filtros);
   }
