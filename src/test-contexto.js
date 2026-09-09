@@ -5,7 +5,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import { processarMensagem } from "./bot/conversation.js";
+import { processarMensagem, achatarResposta } from "./bot/conversation.js";
 import { obterFiltros, obterHistorico, limparHistorico } from "./bot/sessionStore.js";
 
 const FROM = "5511999999999";
@@ -16,7 +16,7 @@ const resultados = [];
 async function enviar(texto, esperado) {
   console.log(`\n--- "${texto}" ---`);
   const resposta = await processarMensagem(FROM, texto);
-  console.log(resposta);
+  console.log(achatarResposta(resposta));
 
   const filtros = obterFiltros(FROM);
   console.log("Filtros mesclados:", JSON.stringify(filtros));

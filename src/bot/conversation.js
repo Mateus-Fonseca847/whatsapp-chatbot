@@ -13,7 +13,10 @@ import {
   obterCarrinho,
   salvarCarrinho,
   obterUltimosProdutosMostrados,
-  salvarUltimosProdutosMostrados
+  salvarUltimosProdutosMostrados,
+  obterAguardandoPagamento,
+  salvarAguardandoPagamento,
+  limparAguardandoPagamento
 } from "./sessionStore.js";
 import { mesclarFiltros } from "./filtrosState.js";
 import {
@@ -22,11 +25,12 @@ import {
   calcularTotalCarrinho,
   detalharCarrinho
 } from "./cart.js";
-import { registrarPedido } from "../data/orders.js";
+import { registrarPedido, atualizarFormaPagamento } from "../data/orders.js";
 import { sugerirSemelhantes, PONTUACAO_ALTA } from "./similarProducts.js";
 import { catalog } from "../data/catalog.js";
 import { SAUDACAO } from "./persona.js";
 import { formatarPreco } from "../utils/formatarPreco.js";
+import { normalizarTexto } from "../utils/normalizarTexto.js";
 
 // Quebra de linha das mensagens que vão pro cliente (WhatsApp), separada da quebra de
 // linha do arquivo-fonte. Usada pelo catálogo, pela busca e pelo carrinho.
@@ -43,12 +47,31 @@ function formatarListaProdutos(produtos) {
     .join(`${eolTexto}${eolTexto}`);
 }
 
+// Ficha de uma peça, do jeito que vai na legenda da foto. Mesmo conteúdo que antes ia
+// na lista de texto — agora uma mensagem por produto, com a imagem junto.
+export function montarLegendaProduto(produto) {
+  const tamanhos = produto.tamanhos.join(", ");
+  return `*${produto.nome}*${eolTexto}Cor: ${produto.cor} | Tamanhos: ${tamanhos}${eolTexto}${formatarPreco(produto.preco)}`;
+}
+
+// Junta tudo num texto só. Serve os canais que ainda não mandam imagem (Meta e Twilio)
+// e os logs: sem isso, uma resposta com produtos viraria [object Object] lá.
+export function achatarResposta(resposta) {
+  if (typeof resposta === "string") return resposta;
+
+  const fichas = resposta.produtos.map((produto) => montarLegendaProduto(produto));
+  return [resposta.texto, ...fichas].join(`${eolTexto}${eolTexto}`);
+}
+
+// Fallback: frase de abertura montada pelo código, usada quando a geração pela IA falha.
+// Não descreve as peças — cada uma vai numa mensagem própria, com foto e ficha.
 function montarRespostaBusca(produtos) {
   if (produtos.length === 0) {
     return "Não encontrei nenhum produto com esses critérios. Quer tentar descrever de outro jeito?";
   }
 
-  return `Encontrei ${produtos.length} produto(s):${eolTexto}${eolTexto}${formatarListaProdutos(produtos)}`;
+  const plural = produtos.length > 1 ? "ões" : "ão";
+  return `Encontrei ${produtos.length} opç${plural} pra você:`;
 }
 
 // --- Catálogo -------------------------------------------------------------
@@ -99,7 +122,7 @@ export function montarRespostaCatalogo(filtros, catalogo) {
 
   return {
     produtos,
-    texto: `Essas são as opções de pijama ${filtros.categoria}:${eolTexto}${eolTexto}${formatarListaProdutos(produtos)}`,
+    texto: `Essas são as opções de pijama ${filtros.categoria}:`,
     resumo: `Catálogo ${filtros.categoria}: ${produtos.length} produto${plural} — ${nomes}`
   };
 }
@@ -217,6 +240,9 @@ function tratarFinalizarPedido(from) {
   // não ficaria sem o carrinho e sem o pedido.
   salvarCarrinho(from, []);
 
+  // A próxima mensagem do cliente é a resposta da pergunta abaixo, não um pedido novo.
+  salvarAguardandoPagamento(from, pedido.id);
+
   const resumoItens = itens.map((item) => `${item.quantidade}x ${item.produto.nome}`).join(", ");
   const texto =
     `Pedido anotado: ${resumoItens}. Total de ${formatarPreco(total)}.` +
@@ -245,6 +271,35 @@ function escolherAlternativas(filtros, encontrados) {
   return { alternativas: buscarAlternativas(filtros, encontrados), motivo: "semelhante" };
 }
 
+// Formas que a loja aceita, reconhecidas por palavra-chave. Determinístico de
+// propósito: mandar "pix" pra IA interpretar custaria uma chamada e devolveria
+// "intencao: ver_carrinho" num carrinho já esvaziado — que foi exatamente o bug.
+const FORMAS_DE_PAGAMENTO = [
+  { forma: "pix", rotulo: "Pix", padrao: /\bpix\b/ },
+  { forma: "cartao", rotulo: "cartão", padrao: /cartao|credito|debito/ },
+  { forma: "combinar_na_entrega", rotulo: "acerto na entrega", padrao: /dinheiro|entrega|combinar/ }
+];
+
+// Devolve o texto de confirmação quando a mensagem responde à pergunta de pagamento,
+// e null quando não é o caso (a mensagem segue pro fluxo normal).
+function tratarRespostaDePagamento(from, textoCliente) {
+  const pedidoId = obterAguardandoPagamento(from);
+  if (!pedidoId) return null;
+
+  // Independente de reconhecer ou não, a espera acaba aqui: se o cliente mudou de
+  // assunto, a conversa não pode ficar presa esperando uma forma de pagamento.
+  limparAguardandoPagamento(from);
+
+  const normalizado = normalizarTexto(textoCliente);
+  const escolhida = FORMAS_DE_PAGAMENTO.find(({ padrao }) => padrao.test(normalizado));
+  if (!escolhida) return null;
+
+  const pedido = atualizarFormaPagamento(pedidoId, escolhida.forma);
+  if (!pedido) return null; // pedido sumiu (servidor reiniciado): trata como mensagem nova
+
+  return `Anotado: ${escolhida.rotulo} no pedido ${pedido.id}. Qualquer dúvida é só chamar!`;
+}
+
 // Devolve { texto, resumo }: `texto` é o que o cliente recebe, `resumo` é o que
 // guardamos como turno "assistant" no histórico. São propósitos diferentes — o cliente
 // lê linguagem natural, o modelo lê o resumo enxuto na próxima mensagem.
@@ -271,7 +326,10 @@ async function montarResposta(from, filtros, conversa) {
 
       return {
         texto: gerado ?? montarRespostaBusca(produtos),
-        resumo: resumirBusca(produtos)
+        resumo: resumirBusca(produtos),
+        // Cada peça vira uma mensagem própria, com foto quando existir. Encontrados e
+        // alternativas entram na mesma leva: os dois foram oferecidos pro cliente.
+        produtos: mostrados
       };
     }
 
@@ -284,7 +342,7 @@ async function montarResposta(from, filtros, conversa) {
         salvarUltimosProdutosMostrados(from, produtos);
       }
 
-      return { texto, resumo };
+      return { texto, resumo, produtos };
     }
 
     case "adicionar_carrinho":
@@ -309,6 +367,16 @@ async function montarResposta(from, filtros, conversa) {
   }
 }
 export async function processarMensagem(from, textoCliente) {
+  // Se o pedido acabou de fechar, a mensagem que chega agora é a resposta de "como
+  // você prefere pagar?" — não um pedido novo. Isso corre antes de interpretarPedido:
+  // além de mais confiável, economiza a chamada à API.
+  const confirmacaoPagamento = tratarRespostaDePagamento(from, textoCliente);
+  if (confirmacaoPagamento) {
+    adicionarMensagem(from, "user", textoCliente);
+    adicionarMensagem(from, "assistant", confirmacaoPagamento);
+    return confirmacaoPagamento;
+  }
+
   const historico = obterHistorico(from);
   const filtrosConhecidos = obterFiltros(from);
 
@@ -331,7 +399,7 @@ export async function processarMensagem(from, textoCliente) {
 
   // A conversa que a IA vê pra escrever a resposta termina na mensagem atual do cliente
   const conversa = [...historico, { role: "user", content: textoCliente }];
-  const { texto, resumo } = await montarResposta(from, filtros, conversa);
+  const { texto, resumo, produtos = [] } = await montarResposta(from, filtros, conversa);
 
   // A apresentação é prefixada pelo código, não pedida ao modelo: assim ela acontece
   // sempre na primeira mensagem, e nunca se repete no meio da conversa.
@@ -342,5 +410,8 @@ export async function processarMensagem(from, textoCliente) {
   adicionarMensagem(from, "user", textoCliente);
   adicionarMensagem(from, "assistant", resumo);
 
-  return textoFinal;
+  // Contrato: string quando é só conversa (confirmação de carrinho, recusa, dúvida), e
+  // { texto, produtos } quando há peças pra mostrar — o canal manda uma mensagem por
+  // produto, com foto. Quem só sabe texto usa achatarResposta.
+  return produtos.length > 0 ? { texto: textoFinal, produtos } : textoFinal;
 }

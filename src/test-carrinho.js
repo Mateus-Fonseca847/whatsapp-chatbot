@@ -4,7 +4,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import { processarMensagem } from "./bot/conversation.js";
+import { processarMensagem, achatarResposta } from "./bot/conversation.js";
 import { obterCarrinho, limparHistorico } from "./bot/sessionStore.js";
 import { listarPedidos } from "./data/orders.js";
 import { catalog } from "./data/catalog.js";
@@ -25,7 +25,7 @@ async function etapa(titulo, mensagem) {
   console.log(`\n=== ${titulo} ===`);
   console.log(`cliente: ${mensagem}`);
   const resposta = await processarMensagem(FROM, mensagem);
-  console.log(`Ana: ${resposta}`);
+  console.log(`Ana: ${achatarResposta(resposta)}`);
   console.log(`carrinho: ${JSON.stringify(obterCarrinho(FROM))}`);
   console.log(`pedidos: ${JSON.stringify(listarPedidos(FROM))}`);
   return resposta;

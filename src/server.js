@@ -2,7 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 dotenv.config();
 
-import { processarMensagem } from "./bot/conversation.js";
+import { processarMensagem, achatarResposta } from "./bot/conversation.js";
 import { enviarMensagem } from "./services/whatsapp.js";
 import {
   enviarMensagemTwilio,
@@ -49,7 +49,7 @@ app.post("/webhook", async (req, res) => {
   if (!text) return; // áudio, imagem, sticker: ainda não tratamos
 
   // O `from` identifica a sessão do cliente, pra que o bot lembre do que já foi dito
-  const resposta = await processarMensagem(from, text);
+  const resposta = achatarResposta(await processarMensagem(from, text));
   console.log(`Resposta para ${from}: ${resposta}`);
 
   // O 200 pra Meta já foi enviado lá em cima, então esse await não atrasa o webhook.
@@ -75,7 +75,7 @@ app.post("/webhook/twilio", async (req, res) => {
 
   console.log(`[twilio] Mensagem de ${from}: ${texto}`);
 
-  const resposta = await processarMensagem(from, texto);
+  const resposta = achatarResposta(await processarMensagem(from, texto));
   console.log(`[twilio] Resposta para ${from}: ${resposta}`);
 
   await enviarMensagemTwilio(from, resposta);

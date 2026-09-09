@@ -8,6 +8,7 @@ dotenv.config();
 import { buscarProdutos } from "./bot/catalogSearch.js";
 import { sugerirSemelhantes } from "./bot/similarProducts.js";
 import { gerarRespostaBusca } from "./services/claude.js";
+import { montarLegendaProduto } from "./bot/conversation.js";
 import { catalog } from "./data/catalog.js";
 import { formatarPreco } from "./utils/formatarPreco.js";
 
@@ -37,23 +38,35 @@ console.log(`Busca exata: ${nomes(exatos2)}`);
 console.log(`Alternativas: ${nomes(alternativas2)}`);
 
 verificar("busca exata não encontra nada", exatos2.length === 0);
+// O catálogo cresceu: agora existem outras peças de verão. O que importa é o Listrado
+// vir sugerido e vir na frente — ele é o único que bate categoria E estação.
 verificar(
   "sugere o Pijama Curto Listrado como parecido",
-  alternativas2.length === 1 && alternativas2[0].nome === listrado.nome
+  alternativas2.some((p) => p.id === listrado.id)
 );
+verificar(
+  "Listrado é a alternativa mais bem pontuada",
+  alternativas2[0]?.id === listrado.id
+);
+verificar("no máximo 3 alternativas", alternativas2.length <= 3);
 
 const resposta2 = await gerarRespostaBusca(exatos2, alternativas2, [
   { role: "user", content: "tem pijama masculino de verão vermelho?" }
 ]);
 console.log(`\n${resposta2}\n`);
 
-verificar("cita o nome real da alternativa", resposta2.includes(listrado.nome));
-// Não conferimos a ausência da palavra "vermelho": dizer "não temos em vermelho" é
-// correto. O que não pode é atribuir a cor errada à peça sugerida.
-verificar(`descreve a cor real da peça (${listrado.cor})`, resposta2.includes("azul"));
+// A frase gerada agora é só a abertura: nome, cor, tamanhos e preço vão na ficha de
+// cada peça, que o canal manda em mensagem própria com a foto.
+verificar("frase de abertura não repete preço", !resposta2.includes("R$"));
+
+const legenda = montarLegendaProduto(listrado);
+console.log(`legenda: ${legenda}`);
+verificar("ficha cita o nome real", legenda.includes(listrado.nome));
+// A cor certa importa: o cliente pediu vermelho e a peça é azul e branco.
+verificar(`ficha descreve a cor real (${listrado.cor})`, legenda.includes(listrado.cor));
 verificar(
-  `usa o preço real (${formatarPreco(listrado.preco)})`,
-  resposta2.includes(formatarPreco(listrado.preco).replace("R$ ", ""))
+  `ficha usa o preço real (${formatarPreco(listrado.preco)})`,
+  legenda.includes(formatarPreco(listrado.preco))
 );
 
 console.log("=== 3. Categoria que não existe no catálogo ===");

@@ -12,6 +12,7 @@ import {
 } from "./bot/sessionStore.js";
 import { listarCategorias } from "./bot/catalogSearch.js";
 import { catalog } from "./data/catalog.js";
+import { montarLegendaProduto, achatarResposta } from "./bot/conversation.js";
 import { formatarPreco } from "./utils/formatarPreco.js";
 
 const FROM = "5511944444444";
@@ -29,7 +30,7 @@ async function etapa(titulo, mensagem) {
   console.log(`=== ${titulo} ===`);
   console.log(`cliente: ${mensagem}`);
   const resposta = await processarMensagem(FROM, mensagem);
-  console.log(`Ana: ${resposta}`);
+  console.log(`Ana: ${achatarResposta(resposta)}`);
   return resposta;
 }
 
@@ -43,14 +44,20 @@ for (const categoria of listarCategorias(catalog)) {
 
 console.log("");
 const r2 = await etapa("2. Abrir uma categoria", "quero ver as opções infantis");
-verificar("lista o Pijama Infantil Unicórnio", r2.includes(unicornio.nome));
-verificar(`mostra o preço certo (${formatarPreco(unicornio.preco)})`, r2.includes(formatarPreco(unicornio.preco)));
-verificar(
-  `mostra os tamanhos certos (${unicornio.tamanhos.join(", ")})`,
-  r2.includes(unicornio.tamanhos.join(", "))
-);
-verificar("mostra a cor certa", r2.includes(unicornio.cor));
+// A listagem virou: frase de abertura + uma peça por mensagem. Os dados da peça estão
+// na ficha, não no texto gerado.
+verificar("abertura cita a categoria", r2.texto.includes("infantil"));
+verificar("devolve o Pijama Infantil Unicórnio pra exibir", r2.produtos.some((p) => p.id === unicornio.id));
 
+const fichaUnicornio = montarLegendaProduto(unicornio);
+console.log(`ficha: ${fichaUnicornio}`);
+verificar("ficha traz o nome", fichaUnicornio.includes(unicornio.nome));
+verificar(`ficha traz o preço certo (${formatarPreco(unicornio.preco)})`, fichaUnicornio.includes(formatarPreco(unicornio.preco)));
+verificar(
+  `ficha traz os tamanhos certos (${unicornio.tamanhos.join(", ")})`,
+  fichaUnicornio.includes(unicornio.tamanhos.join(", "))
+);
+verificar("ficha traz a cor certa", fichaUnicornio.includes(unicornio.cor));
 const mostrados = obterUltimosProdutosMostrados(FROM);
 console.log(`ultimosProdutosMostrados: ${mostrados.map((p) => p.nome).join(", ") || "(vazio)"}`);
 verificar(

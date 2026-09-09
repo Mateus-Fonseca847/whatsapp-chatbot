@@ -46,7 +46,12 @@ verificar(
 );
 
 const feminino = buscarProdutos({ categoria: "FEMININO" }, catalog);
-verificar("categoria compara sem diferenciar caixa", feminino.length === 1);
+// Conta os femininos do catálogo atual, em vez de fixar um número que envelhece.
+const femininosNoCatalogo = catalog.filter((p) => p.categoria === "feminino").length;
+verificar(
+  "categoria compara sem diferenciar caixa",
+  feminino.length === femininosNoCatalogo && femininosNoCatalogo > 0
+);
 
 console.log("\n--- Filtros que não batem continuam não batendo ---");
 verificar("estacao inexistente não devolve nada", buscarProdutos({ estacao: "outono" }, catalog).length === 0);

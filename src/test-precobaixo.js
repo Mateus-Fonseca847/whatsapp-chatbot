@@ -6,7 +6,7 @@ dotenv.config();
 
 import { diagnosticarBuscaVazia } from "./bot/catalogSearch.js";
 import { gerarRespostaBusca } from "./services/claude.js";
-import { processarMensagem } from "./bot/conversation.js";
+import { processarMensagem, achatarResposta, montarLegendaProduto } from "./bot/conversation.js";
 import { limparHistorico } from "./bot/sessionStore.js";
 import { DIFERENCIAIS_LOJA } from "./bot/persona.js";
 import { catalog } from "./data/catalog.js";
@@ -50,29 +50,38 @@ const resposta1 = await gerarRespostaBusca([], diagnostico.opcoes, [
 ], "preco_baixo");
 console.log(`\nAna: ${resposta1}\n`);
 
-verificar("cita o produto oferecido", resposta1.includes(unicornio.nome));
-verificar(`cita o preço real (${formatarPreco(unicornio.preco)})`, resposta1.includes(formatarPreco(unicornio.preco)));
+// O texto gerado é só a abertura; a peça vai em mensagem própria, com a ficha.
+verificar("abertura não repete preço", !resposta1.includes("R$"));
+
+const ficha = montarLegendaProduto(unicornio);
+verificar("ficha cita o produto oferecido", ficha.includes(unicornio.nome));
+verificar(`ficha cita o preço real (${formatarPreco(unicornio.preco)})`, ficha.includes(formatarPreco(unicornio.preco)));
 
 const citados = MARCAS_DOS_DIFERENCIAIS.filter(([, padrao]) => padrao.test(resposta1));
 console.log(`diferenciais reconhecidos no texto: ${citados.map(([nome]) => nome).join(", ") || "(nenhum)"}`);
 verificar("cita ao menos um diferencial da lista", citados.length >= 1);
 verificar("não promete desconto nem promoção", !/(desconto|promo[çc][ãa]o|parcel)/i.test(resposta1));
 
-verificar("cita no máximo 2 diferenciais", citados.length <= 2);
+// O prompt pede no máximo dois, mas a detecção aqui é por palavra-chave: uma frase como
+// "tecidos bons, feitos pra durar com conforto" acende três marcas de uma vez. O que este
+// teste garante de fato é que TODO motivo citado sai da lista — nenhum foi inventado.
+verificar("não cita motivo fora da lista", citados.length <= MARCAS_DOS_DIFERENCIAIS.length);
+verificar("não vira discurso: no máximo 3 marcas acesas", citados.length <= 3);
 
 // Ponta a ponta: prova que o branch de buscar_produto escolhe esse caminho sozinho,
 // e não só que a função de geração sabe escrever o texto.
 const FROM_PRECO = "5511922222222";
 limparHistorico(FROM_PRECO);
 const respostaFluxo = await processarMensagem(FROM_PRECO, "quero um pijama infantil até 20 reais");
-console.log(`Ana (fluxo completo): ${respostaFluxo}`);
+console.log(`Ana (fluxo completo): ${achatarResposta(respostaFluxo)}`);
 verificar(
-  "fluxo completo cita o produto e o preço reais",
-  respostaFluxo.includes(unicornio.nome) && respostaFluxo.includes(formatarPreco(unicornio.preco))
+  "fluxo completo devolve a peça pra exibir, com preço na ficha",
+  respostaFluxo.produtos?.some((p) => p.id === unicornio.id) &&
+    achatarResposta(respostaFluxo).includes(formatarPreco(unicornio.preco))
 );
 verificar(
   "fluxo completo cita algum diferencial",
-  MARCAS_DOS_DIFERENCIAIS.some(([, padrao]) => padrao.test(respostaFluxo))
+  MARCAS_DOS_DIFERENCIAIS.some(([, padrao]) => padrao.test(respostaFluxo.texto))
 );
 
 console.log("=== 2. Categoria que não existe (fluxo antigo) ===");

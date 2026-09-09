@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import makeWASocket, {
   DisconnectReason,
@@ -10,7 +11,11 @@ import makeWASocket, {
 import qrcode from "qrcode-terminal";
 import qrcodeImagem from "qrcode";
 
-import { processarMensagem } from "../bot/conversation.js";
+import {
+  processarMensagem,
+  montarLegendaProduto,
+  achatarResposta
+} from "../bot/conversation.js";
 
 // Terceiro canal, ao lado de Meta e Twilio. Este conecta direto ao WhatsApp Web, como um
 // aparelho pareado: não passa por conta comercial nem por aprovação da Meta, então é o
@@ -140,6 +145,40 @@ async function resolverNumeroDoRemetente(sock, key) {
   return null; // grupo, status, transmissão, newsletter: não é atendimento individual
 }
 
+// Uma mensagem por peça: a foto com a ficha na legenda. Produto sem foto cadastrada
+// (os do catálogo antigo) vai como texto, com a mesma ficha — melhor que não aparecer.
+async function enviarProduto(sock, jid, produto) {
+  const legenda = montarLegendaProduto(produto);
+  const caminho = produto.foto ? path.resolve(produto.foto) : null;
+
+  if (caminho && fs.existsSync(caminho)) {
+    await sock.sendMessage(jid, { image: fs.readFileSync(caminho), caption: legenda });
+    return;
+  }
+
+  if (caminho) {
+    // Caminho cadastrado mas arquivo ausente: avisa no log e ainda assim mostra a peça
+    console.warn(`[baileys] Foto não encontrada em ${caminho}, mandando ${produto.nome} como texto`);
+  }
+
+  await sock.sendMessage(jid, { text: legenda });
+}
+
+// A resposta é string quando é só conversa, e { texto, produtos } quando há peças
+// pra mostrar. No segundo caso vai a frase de abertura e depois uma mensagem por peça.
+async function enviarResposta(sock, jid, resposta) {
+  if (typeof resposta === "string") {
+    await sock.sendMessage(jid, { text: resposta });
+    return;
+  }
+
+  await sock.sendMessage(jid, { text: resposta.texto });
+
+  for (const produto of resposta.produtos) {
+    await enviarProduto(sock, jid, produto);
+  }
+}
+
 async function tratarMensagem(sock, msg) {
   const jid = msg.key?.remoteJid;
 
@@ -195,8 +234,8 @@ async function tratarMensagem(sock, msg) {
 
   try {
     const resposta = await processarMensagem(numero, texto);
-    console.log(`[baileys] Resposta para ${numero}: ${resposta}`);
-    await sock.sendMessage(jid, { text: resposta });
+    console.log(`[baileys] Resposta para ${numero}: ${achatarResposta(resposta)}`);
+    await enviarResposta(sock, jid, resposta);
   } catch (erro) {
     // Uma mensagem problemática não pode derrubar a conexão inteira
     console.error(`[baileys] Falha ao responder ${numero}:`, erro.message);

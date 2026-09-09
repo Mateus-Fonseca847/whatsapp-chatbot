@@ -155,12 +155,12 @@ ${DIFERENCIAIS_LOJA.map((diferencial) => `- ${diferencial}`).join("\n")}
 Peças que atendem o resto do pedido, da mais barata para a mais cara:
 ${listarProdutosParaPrompt(alternativas)}
 
-Ofereça essas peças como o que mais se aproxima do que ele pediu. Não prometa desconto, promoção, parcelamento nem nada que não esteja nesta mensagem.`);
+Anuncie essas peças como o que mais se aproxima do que ele pediu, sem descrevê-las e sem dizer quanto custam: o valor de cada uma aparece na ficha logo abaixo da sua mensagem. Fale que o preço da loja é mais alto sem citar número nenhum. Não prometa desconto, promoção, parcelamento nem nada que não esteja nesta mensagem.`);
   } else if (alternativas.length > 0) {
     partes.push(`Peças parecidas que existem no catálogo, para oferecer como alternativa:
 ${listarProdutosParaPrompt(alternativas)}
 
-${produtos.length > 0 ? "Apresente primeiro o que foi encontrado e depois ofereça a alternativa." : "Ofereça essas peças como o que há de mais próximo."}
+${produtos.length > 0 ? "Apresente o que foi encontrado e avise que há também uma peça parecida." : "Ofereça essas peças como o que há de mais próximo."}
 Deixe claro que são peças parecidas, e não exatamente o que o cliente pediu.`);
   } else if (produtos.length === 0) {
     // O modelo já especulou aqui ("temos opções, mas mais caras") sem ter recebido nada
@@ -172,8 +172,12 @@ Convide o cliente a descrever o que procura de outro jeito, sem prometer nem sug
   }
 
   if (produtos.length > 0 || alternativas.length > 0) {
-    partes.push(`Mencione apenas os produtos listados acima, com exatamente os preços, cores e tamanhos fornecidos. Nunca invente ou sugira produtos que não estejam nessas listas.
-Informe o preço de todo produto que mencionar, copiando o valor exatamente como está na lista.`);
+    partes.push(`As peças acima são as únicas que existem pra esta resposta: não invente nem sugira nenhuma outra.
+
+Elas são enviadas logo depois da sua frase, uma mensagem por peça, com foto e uma ficha pronta com nome, cor, tamanhos e preço.
+Escreva APENAS a frase que apresenta essas peças — a abertura, não a descrição delas.
+Nunca escreva nome de produto, cor, tamanho nem preço: isso já vai na ficha de cada peça, e repetir deixa a mensagem duplicada.
+Termine de um jeito que faça sentido com as peças aparecendo em seguida.`);
   }
 
   return partes.join("\n\n");

@@ -6,6 +6,57 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **A resposta sobre forma de pagamento agora é entendida.** O bot fechava o pedido e
+  perguntava "Pix, cartão ou na entrega?", mas nada esperava a resposta: o "pix" do
+  cliente virava mensagem nova, era interpretado como intenção de carrinho e voltava
+  "seu carrinho está vazio" — logo depois de ele ter comprado.
+
+  - `orders.js`: pedido nasce com `formaPagamento: null` e ganhou
+    `atualizarFormaPagamento(pedidoId, forma)`.
+  - `sessionStore.js`: `aguardandoPagamento` guarda o id do pedido que fechou e espera
+    resposta, com `obter`/`salvar`/`limpar`.
+  - `finalizar_pedido` marca essa espera logo depois de registrar o pedido.
+  - `processarMensagem` checa essa espera **antes** de chamar `interpretarPedido`: o
+    casamento é por palavra-chave (`pix`, `cartao`/`credito`/`debito`,
+    `dinheiro`/`entrega`/`combinar`), sem IA. Além de mais confiável para três palavras
+    conhecidas, economiza uma chamada à API por resposta de pagamento.
+  - Não casando com nada, a espera é encerrada do mesmo jeito e a mensagem segue o fluxo
+    normal — se o cliente mudar de assunto, a conversa não pode ficar presa esperando
+    uma forma de pagamento que nunca vem.
+  - A comparação passa por `normalizarTexto`, então "Cartão" e "cartao" valem igual.
+
+- `src/test-pagamento.js`: o caso real (item, "só isso", finalizar, "pix") conferindo
+  que o pedido termina com `formaPagamento: "pix"` e que a confirmação cita o número do
+  pedido; e o caso da resposta que não é pagamento, conferindo que a conversa não trava.
+
+- **Uma mensagem por peça, com foto.** O bot mandava tudo num texto só: a frase e a
+  lista de produtos escritas pela IA. Agora, sempre que há peças pra oferecer, vai a
+  frase de abertura e, em seguida, uma mensagem por produto — imagem com a ficha na
+  legenda.
+
+  - `processarMensagem` mudou de contrato: continua devolvendo `string` quando é só
+    conversa (confirmação de carrinho, recusa, dúvida) e passa a devolver
+    `{ texto, produtos }` quando há peças pra mostrar.
+  - `montarLegendaProduto(produto)` monta a ficha (nome, cor, tamanhos, preço) de forma
+    determinística — mesmo conteúdo que antes ia na lista de texto.
+  - **A IA não descreve mais produto nenhum.** O system prompt de `gerarRespostaBusca`
+    agora manda escrever só a frase de abertura e proíbe citar nome, cor, tamanho ou
+    preço. Isso encerra de vez o problema antigo do modelo omitir preço ou resumir a
+    lista: esses dados não passam mais por ele na hora de exibir.
+  - Vale nos três casos: busca com resultado, alternativas (preço ou similaridade) e
+    navegação de catálogo por categoria.
+  - No canal Baileys, `enviarResposta` manda o texto e depois percorre os produtos:
+    `image` + `caption` quando há foto, texto com a mesma ficha quando `foto` é `null`
+    (produtos antigos) ou quando o arquivo não está no disco — nesse caso com aviso no
+    log, porque é erro de cadastro, não do cliente.
+  - `achatarResposta` junta texto e fichas num string só. Meta e Twilio ainda não mandam
+    imagem e continuam funcionando por ela; sem isso, `server.js` enviaria
+    `[object Object]`.
+
+- `src/test-fotos.js`: reproduz a lógica de envio do canal e confere a sequência de
+  mensagens da pergunta real ("pijama de frio rosa choque para minha sobrinha de 6
+  anos"), incluindo a existência dos arquivos de imagem em disco.
+
 - **Recusa educada quando o pedido vem abaixo do preço praticado.** A busca vazia era
   tratada de um jeito só, mas "não temos nada assim" e "temos, só que custa mais do que
   você falou" são conversas diferentes — e a segunda estava sendo respondida como se
