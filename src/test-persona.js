@@ -65,6 +65,21 @@ for (const produto of catalog) {
 }
 verificar("sem emoji", !EMOJI.test(resposta2));
 
+console.log("=== 3. A mesma mensagem entregue duas vezes em paralelo ===");
+// Aconteceu de verdade: com dois sockets vivos depois de uma reconexão, a mesma
+// mensagem era processada duas vezes, e as duas respostas vinham com a apresentação.
+const FROM_DUPLICADO = "5511900000009";
+limparHistorico(FROM_DUPLICADO);
+
+const [d1, d2] = await Promise.all([
+  processarMensagem(FROM_DUPLICADO, "oi, tem pijama infantil?"),
+  processarMensagem(FROM_DUPLICADO, "oi, tem pijama infantil?")
+]);
+
+const saudacoes = [d1, d2].filter((r) => textoDe(r).startsWith(SAUDACAO)).length;
+console.log(`respostas que saúdam: ${saudacoes} de 2`);
+verificar("a saudação sai uma vez só, mesmo com entrega duplicada", saudacoes === 1);
+
 console.log("\n=== Resultado ===");
 const todosOk = resultados.every(Boolean);
 console.log(todosOk ? "Todas as verificações passaram." : "Houve verificações que falharam.");

@@ -12,6 +12,7 @@
 //     referências como "quero o unicórnio" sem adivinhação
 //   - checkout: { etapa, endereco } enquanto o pedido está sendo fechado. O pedido só
 //     é registrado quando as duas etapas terminam
+//   - saudou: se a apresentação já foi feita nesta conversa
 
 const MAX_MENSAGENS = 10; // 5 trocas (cliente + bot); acima disso a conversa encarece cada chamada à API sem ganho
 
@@ -26,7 +27,10 @@ function obterSessao(from) {
       carrinho: [],
       ultimosProdutosMostrados: [],
       // { etapa: "endereco" | "pagamento", endereco } durante o fechamento do pedido
-      checkout: null
+      checkout: null,
+      // Marca explícita em vez de deduzir do histórico: duas entregas da mesma
+      // mensagem liam o histórico vazio as duas e saudavam as duas.
+      saudou: false
     };
     sessoes.set(from, sessao);
   }
@@ -79,6 +83,14 @@ export function salvarUltimosProdutosMostrados(from, produtos) {
   const sessao = obterSessao(from);
   sessao.ultimosProdutosMostrados = [...(produtos ?? [])];
   return [...sessao.ultimosProdutosMostrados];
+}
+
+export function jaSaudou(from) {
+  return obterSessao(from).saudou;
+}
+
+export function marcarSaudacao(from) {
+  obterSessao(from).saudou = true;
 }
 
 export function obterCheckout(from) {

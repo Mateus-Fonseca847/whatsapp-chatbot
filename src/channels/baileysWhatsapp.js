@@ -33,6 +33,23 @@ const ARQUIVO_QR = path.resolve("baileys-qr.png");
 // parear, o WhatsApp despeja as conversas antigas em rajada; o silêncio marca o fim.
 const SILENCIO_ATE_PRONTO_MS = 3000;
 
+// Ids já tratados. A mesma mensagem chega mais de uma vez quando sobra socket de uma
+// reconexão anterior — e duas entregas em paralelo geravam duas respostas completas.
+const MAX_IDS_LEMBRADOS = 300;
+const idsTratados = new Set();
+
+export function jaTratada(id) {
+  if (!id) return false;
+  if (idsTratados.has(id)) return true;
+
+  idsTratados.add(id);
+  if (idsTratados.size > MAX_IDS_LEMBRADOS) {
+    // Set mantém ordem de inserção: o primeiro é o mais antigo
+    idsTratados.delete(idsTratados.values().next().value);
+  }
+  return false;
+}
+
 // O logger padrão do Baileys é um pino em nível info, que despeja JSON no terminal e
 // atrapalha a leitura do QR code. Como só nos interessam avisos e erros, passamos um
 // logger mínimo com a mesma interface (a lib chama child/trace/debug/info/warn/error).
@@ -202,6 +219,11 @@ async function tratarMensagem(sock, msg) {
 
   if (msg.key?.fromMe) return; // mensagem que o próprio bot enviou
 
+  if (jaTratada(msg.key?.id)) {
+    console.log(`[baileys] Mensagem ${msg.key?.id} repetida, ignorada`);
+    return;
+  }
+
   const remetente = await resolverNumeroDoRemetente(sock, msg.key);
   if (!remetente) return; // não é conversa individual
 
@@ -333,6 +355,18 @@ export async function iniciarBaileys() {
       }
 
       console.warn(`[baileys] Conexão caiu (código ${motivo ?? "desconhecido"}). Reconectando...`);
+      // Desliga o socket que caiu antes de abrir outro: sem isso os handlers antigos
+      // continuam vivos e a mesma mensagem passa a ser tratada uma vez por socket.
+      try {
+        sock.ev.removeAllListeners("messages.upsert");
+        sock.ev.removeAllListeners("connection.update");
+        sock.ev.removeAllListeners("creds.update");
+        sock.end(undefined);
+      } catch (erro) {
+        // Socket já morto: encerrar de novo não é problema, só não pode derrubar tudo
+        console.warn("[baileys] Socket antigo já estava encerrado:", erro.message);
+      }
+
       // Sem o catch, uma falha na reconexão viraria unhandled rejection e derrubaria o processo
       iniciarBaileys().catch((erro) => {
         console.error("[baileys] Falha ao reconectar:", erro.message);

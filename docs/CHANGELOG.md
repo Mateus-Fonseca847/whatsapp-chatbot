@@ -420,6 +420,32 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Corrigido
 
+- **Saudação repetida em mensagens seguidas da mesma conversa.**
+
+  Diagnóstico: a lógica de "primeira mensagem" estava certa para mensagens em sequência
+  — o teste reproduziu isso. O que falhava era a **mesma mensagem entregue duas vezes em
+  paralelo**: as duas execuções liam `obterHistorico(from)` vazio antes de qualquer uma
+  escrever, as duas concluíam que eram a primeira, e as duas se apresentavam.
+
+  De onde vinham as entregas duplicadas: a reconexão chamava `iniciarBaileys()` sem
+  desligar o socket que caiu, então os handlers antigos continuavam vivos e cada socket
+  tratava a mesma mensagem uma vez. O log de uma execução mostrou sete anúncios de
+  "Pronto para receber mensagens" no mesmo processo — sete sockets.
+
+  Três correções, do sintoma à causa:
+
+  - `sessionStore` ganhou a marca `saudou`, e `processarMensagem` decide **e marca** a
+    saudação antes de qualquer `await`. Deduzir de `historico.length` era uma leitura
+    seguida de escrita com espera no meio — corrida por construção.
+  - O canal ignora mensagem com id já tratado (`jaTratada`), o que também impedia as
+    duas respostas completas, não só a saudação dobrada.
+  - A reconexão agora remove os listeners e encerra o socket que caiu antes de abrir
+    outro.
+
+  Uma causa secundária, real mas não observada nesta ocorrência: se o mesmo contato for
+  identificado ora pelo telefone, ora pelo id LID não resolvido, as duas mensagens caem
+  em sessões diferentes e a saudação sai de novo. Fica registrado como risco conhecido.
+
 - **Tamanho em minúscula não encontrava nada.** `buscarProdutos` comparava
   `produto.tamanhos.includes(String(filtros.tamanho))` sem normalizar: cliente digitando
   "gg" não achava o Pijama Curto Listrado, cadastrado como `"GG"`. Agora usa

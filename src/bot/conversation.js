@@ -16,7 +16,9 @@ import {
   salvarUltimosProdutosMostrados,
   obterCheckout,
   salvarCheckout,
-  limparCheckout
+  limparCheckout,
+  jaSaudou,
+  marcarSaudacao
 } from "./sessionStore.js";
 import { mesclarFiltros } from "./filtrosState.js";
 import {
@@ -419,8 +421,11 @@ export async function processarMensagem(from, textoCliente) {
   const historico = obterHistorico(from);
   const filtrosConhecidos = obterFiltros(from);
 
-  // Histórico vazio = ninguém falou nada ainda nessa sessão, então é a primeira mensagem
-  const primeiraMensagem = historico.length === 0;
+  // A saudação é decidida e marcada AGORA, antes de qualquer await. Deduzir de
+  // historico.length falhava quando a mesma mensagem chegava duas vezes em paralelo:
+  // as duas liam o histórico vazio e as duas se apresentavam.
+  const primeiraMensagem = !jaSaudou(from);
+  if (primeiraMensagem) marcarSaudacao(from);
 
   // A IA só precisa apontar o que é novo na mensagem atual; o acúmulo é nosso.
   const filtrosNovos = await interpretarPedido(textoCliente, historico, filtrosConhecidos);
