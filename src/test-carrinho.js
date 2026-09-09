@@ -52,19 +52,33 @@ verificar(
   r3.includes(formatarPreco(unicornio.preco))
 );
 
-const r4 = await etapa("4. Finalizar", "pode finalizar");
+// Fechar o pedido agora tem duas etapas antes do registro: endereço e pagamento.
+const ENDERECO = "Rua das Acácias, 120, Centro, Volta Redonda";
+
+const r4 = await etapa("4. Pedir pra fechar", "pode finalizar");
+verificar("pergunta o endereço antes de fechar", /endere[çc]o/i.test(r4));
+verificar("não registra pedido antes do checkout terminar", listarPedidos(FROM).length === 0);
+verificar("carrinho segue intacto durante o checkout", obterCarrinho(FROM).length === 1);
+
+const r5 = await etapa("5. Informar o endereço", ENDERECO);
+verificar(
+  `resumo mostra o total (${formatarPreco(unicornio.preco)})`,
+  r5.includes(formatarPreco(unicornio.preco))
+);
+verificar("resumo mostra o endereço", r5.includes(ENDERECO));
+
+const r6 = await etapa("6. Informar o pagamento", "pix");
 const pedidos = listarPedidos(FROM);
 verificar("um pedido foi registrado", pedidos.length === 1);
 verificar("pedido está pendente", pedidos[0]?.status === "pendente");
 verificar("pedido tem o item do carrinho", pedidos[0]?.itens?.[0]?.produtoId === unicornio.id);
 verificar(`total do pedido é ${formatarPreco(unicornio.preco)}`, pedidos[0]?.total === unicornio.preco);
 verificar("pedido tem data de criação", Boolean(pedidos[0]?.criadoEm));
-verificar("confirmação cita o total", r4.includes(formatarPreco(unicornio.preco)));
-verificar(
-  "confirmação avisa sobre pagamento à parte",
-  /pix/i.test(r4) && /cart[ãa]o/i.test(r4) && /entrega/i.test(r4)
-);
-verificar("carrinho ficou vazio depois de finalizar", obterCarrinho(FROM).length === 0);
+verificar("pedido guardou o endereço", pedidos[0]?.endereco === ENDERECO);
+verificar("pedido guardou a forma de pagamento", pedidos[0]?.formaPagamento === "pix");
+verificar("confirmação cita o total", r6.includes(formatarPreco(unicornio.preco)));
+verificar("confirmação traz instrução de pagamento", /chave pix/i.test(r6));
+verificar("carrinho ficou vazio depois de fechar", obterCarrinho(FROM).length === 0);
 
 console.log("\n=== Resultado ===");
 const todosOk = resultados.every(Boolean);

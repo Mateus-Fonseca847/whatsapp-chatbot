@@ -14,9 +14,9 @@ import {
   salvarCarrinho,
   obterUltimosProdutosMostrados,
   salvarUltimosProdutosMostrados,
-  obterAguardandoPagamento,
-  salvarAguardandoPagamento,
-  limparAguardandoPagamento
+  obterCheckout,
+  salvarCheckout,
+  limparCheckout
 } from "./sessionStore.js";
 import { mesclarFiltros } from "./filtrosState.js";
 import {
@@ -25,12 +25,17 @@ import {
   calcularTotalCarrinho,
   detalharCarrinho
 } from "./cart.js";
-import { registrarPedido, atualizarFormaPagamento } from "../data/orders.js";
+import { registrarPedido } from "../data/orders.js";
 import { sugerirSemelhantes, PONTUACAO_ALTA } from "./similarProducts.js";
 import { catalog } from "../data/catalog.js";
 import { SAUDACAO } from "./persona.js";
 import { formatarPreco } from "../utils/formatarPreco.js";
 import { normalizarTexto } from "../utils/normalizarTexto.js";
+import {
+  montarResumoPedido,
+  montarConfirmacaoFinal,
+  reconhecerFormaPagamento
+} from "./checkout.js";
 
 // Quebra de linha das mensagens que vão pro cliente (WhatsApp), separada da quebra de
 // linha do arquivo-fonte. Usada pelo catálogo, pela busca e pelo carrinho.
@@ -225,6 +230,12 @@ function tratarVerCarrinho(from) {
 }
 
 function tratarFinalizarPedido(from) {
+  const checkout = obterCheckout(from);
+
+  // Fechamento já em andamento: lembra o que falta em vez de recomeçar (ou de dizer que
+  // o carrinho está vazio, que é como isso aparecia antes).
+  if (checkout) return lembrarEtapaPendente(checkout);
+
   const carrinho = obterCarrinho(from);
   const itens = detalharCarrinho(carrinho, catalog);
 
@@ -233,25 +244,13 @@ function tratarFinalizarPedido(from) {
     return { texto, resumo: "Pedido: não finalizado, carrinho vazio" };
   }
 
+  // O pedido NÃO é registrado aqui: primeiro endereço, depois pagamento.
+  salvarCheckout(from, { etapa: "endereco", endereco: null });
+
   const total = calcularTotalCarrinho(carrinho, catalog);
-  const pedido = registrarPedido(from, carrinho, total);
-
-  // Carrinho esvaziado só depois do pedido registrado: se registrar falhasse, o cliente
-  // não ficaria sem o carrinho e sem o pedido.
-  salvarCarrinho(from, []);
-
-  // A próxima mensagem do cliente é a resposta da pergunta abaixo, não um pedido novo.
-  salvarAguardandoPagamento(from, pedido.id);
-
-  const resumoItens = itens.map((item) => `${item.quantidade}x ${item.produto.nome}`).join(", ");
-  const texto =
-    `Pedido anotado: ${resumoItens}. Total de ${formatarPreco(total)}.` +
-    `${eolTexto}${eolTexto}O pagamento a gente combina à parte — pode ser Pix, cartão ou acertar na entrega. ` +
-    "Como você prefere?";
-
   return {
-    texto,
-    resumo: `Pedido ${pedido.id} registrado (pendente), total ${formatarPreco(total)}`
+    texto: `Boa! Seu carrinho está em ${formatarPreco(total)}. ${PERGUNTA_ENDERECO}`,
+    resumo: `Checkout iniciado, total ${formatarPreco(total)}, aguardando endereço`
   };
 }
 
@@ -271,33 +270,73 @@ function escolherAlternativas(filtros, encontrados) {
   return { alternativas: buscarAlternativas(filtros, encontrados), motivo: "semelhante" };
 }
 
-// Formas que a loja aceita, reconhecidas por palavra-chave. Determinístico de
-// propósito: mandar "pix" pra IA interpretar custaria uma chamada e devolveria
-// "intencao: ver_carrinho" num carrinho já esvaziado — que foi exatamente o bug.
-const FORMAS_DE_PAGAMENTO = [
-  { forma: "pix", rotulo: "Pix", padrao: /\bpix\b/ },
-  { forma: "cartao", rotulo: "cartão", padrao: /cartao|credito|debito/ },
-  { forma: "combinar_na_entrega", rotulo: "acerto na entrega", padrao: /dinheiro|entrega|combinar/ }
-];
+// O fechamento do pedido acontece em duas etapas — endereço e forma de pagamento — e o
+// pedido só é registrado quando as duas terminam. Registrar cedo e corrigir depois já
+// gerou pedido sem pagamento e resposta de "carrinho vazio" pra quem tinha comprado.
 
-// Devolve o texto de confirmação quando a mensagem responde à pergunta de pagamento,
-// e null quando não é o caso (a mensagem segue pro fluxo normal).
-function tratarRespostaDePagamento(from, textoCliente) {
-  const pedidoId = obterAguardandoPagamento(from);
-  if (!pedidoId) return null;
+const PERGUNTA_ENDERECO =
+  "Pra fechar o pedido, me manda o endereço de entrega? Rua, número, bairro e cidade.";
+const PERGUNTA_PAGAMENTO =
+  "Como você prefere pagar? Pode ser Pix, cartão ou acertar na entrega.";
 
-  // Independente de reconhecer ou não, a espera acaba aqui: se o cliente mudou de
-  // assunto, a conversa não pode ficar presa esperando uma forma de pagamento.
-  limparAguardandoPagamento(from);
+// "finalizar" de novo no meio do fechamento é o cliente insistindo, não um endereço.
+const PEDIDO_DE_FINALIZAR = /finaliz|fechar? o? ?pedido|concluir|encerrar/;
 
-  const normalizado = normalizarTexto(textoCliente);
-  const escolhida = FORMAS_DE_PAGAMENTO.find(({ padrao }) => padrao.test(normalizado));
-  if (!escolhida) return null;
+function lembrarEtapaPendente(checkout) {
+  if (checkout.etapa === "endereco") {
+    return {
+      texto: `Seu pedido está quase fechando. ${PERGUNTA_ENDERECO}`,
+      resumo: "Checkout: aguardando endereço"
+    };
+  }
 
-  const pedido = atualizarFormaPagamento(pedidoId, escolhida.forma);
-  if (!pedido) return null; // pedido sumiu (servidor reiniciado): trata como mensagem nova
+  return {
+    texto: `Falta só a forma de pagamento. ${PERGUNTA_PAGAMENTO}`,
+    resumo: "Checkout: aguardando forma de pagamento"
+  };
+}
 
-  return `Anotado: ${escolhida.rotulo} no pedido ${pedido.id}. Qualquer dúvida é só chamar!`;
+// Devolve o texto quando a mensagem faz parte do fechamento em andamento, e null
+// quando não há checkout aberto (a mensagem segue pro fluxo normal).
+function tratarCheckout(from, textoCliente) {
+  const checkout = obterCheckout(from);
+  if (!checkout) return null;
+
+  const texto = String(textoCliente ?? "").trim();
+  if (!texto) return null;
+
+  // Insistir em "finalizar" não reinicia nada: só lembra o que falta.
+  if (PEDIDO_DE_FINALIZAR.test(normalizarTexto(texto))) {
+    return lembrarEtapaPendente(checkout).texto;
+  }
+
+  if (checkout.etapa === "endereco") {
+    // Endereço é texto livre: validar formato aqui só criaria atrito com quem escreve
+    // do jeito que sabe. Quem confere é a pessoa que vai separar o pedido.
+    salvarCheckout(from, { etapa: "pagamento", endereco: texto });
+
+    const resumo = montarResumoPedido(obterCarrinho(from), catalog, texto);
+    return `${resumo}${eolTexto}${eolTexto}${PERGUNTA_PAGAMENTO}`;
+  }
+
+  const forma = reconhecerFormaPagamento(texto);
+  if (!forma) {
+    // Não avança: sem forma de pagamento o pedido não fecha.
+    return `Não entendi a forma de pagamento. ${PERGUNTA_PAGAMENTO}`;
+  }
+
+  const carrinho = obterCarrinho(from);
+  const total = calcularTotalCarrinho(carrinho, catalog);
+  const pedido = registrarPedido(from, carrinho, total, {
+    endereco: checkout.endereco,
+    formaPagamento: forma.forma
+  });
+
+  // Só agora: com endereço e pagamento definidos, o pedido está completo.
+  salvarCarrinho(from, []);
+  limparCheckout(from);
+
+  return montarConfirmacaoFinal(pedido, catalog);
 }
 
 // Devolve { texto, resumo }: `texto` é o que o cliente recebe, `resumo` é o que
@@ -367,14 +406,14 @@ async function montarResposta(from, filtros, conversa) {
   }
 }
 export async function processarMensagem(from, textoCliente) {
-  // Se o pedido acabou de fechar, a mensagem que chega agora é a resposta de "como
-  // você prefere pagar?" — não um pedido novo. Isso corre antes de interpretarPedido:
-  // além de mais confiável, economiza a chamada à API.
-  const confirmacaoPagamento = tratarRespostaDePagamento(from, textoCliente);
-  if (confirmacaoPagamento) {
+  // Com um fechamento em andamento, a mensagem que chega é parte dele — endereço ou
+  // forma de pagamento —, não um pedido novo. Roda antes de interpretarPedido: além de
+  // mais confiável, economiza a chamada à API.
+  const respostaCheckout = tratarCheckout(from, textoCliente);
+  if (respostaCheckout) {
     adicionarMensagem(from, "user", textoCliente);
-    adicionarMensagem(from, "assistant", confirmacaoPagamento);
-    return confirmacaoPagamento;
+    adicionarMensagem(from, "assistant", respostaCheckout);
+    return respostaCheckout;
   }
 
   const historico = obterHistorico(from);

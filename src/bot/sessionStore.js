@@ -10,8 +10,8 @@
 //   - carrinho: [{ produtoId, quantidade }] do que o cliente quer levar
 //   - ultimosProdutosMostrados: o que apareceu na última resposta, pra resolver
 //     referências como "quero o unicórnio" sem adivinhação
-//   - aguardandoPagamento: id do pedido que fechou e está esperando o cliente dizer
-//     como vai pagar — sem isso a resposta dele viraria uma mensagem solta
+//   - checkout: { etapa, endereco } enquanto o pedido está sendo fechado. O pedido só
+//     é registrado quando as duas etapas terminam
 
 const MAX_MENSAGENS = 10; // 5 trocas (cliente + bot); acima disso a conversa encarece cada chamada à API sem ganho
 
@@ -25,8 +25,8 @@ function obterSessao(from) {
       filtros: null,
       carrinho: [],
       ultimosProdutosMostrados: [],
-      // Id do pedido cuja forma de pagamento ainda não foi respondida
-      aguardandoPagamento: null
+      // { etapa: "endereco" | "pagamento", endereco } durante o fechamento do pedido
+      checkout: null
     };
     sessoes.set(from, sessao);
   }
@@ -81,18 +81,19 @@ export function salvarUltimosProdutosMostrados(from, produtos) {
   return [...sessao.ultimosProdutosMostrados];
 }
 
-export function obterAguardandoPagamento(from) {
-  return obterSessao(from).aguardandoPagamento;
+export function obterCheckout(from) {
+  const { checkout } = obterSessao(from);
+  return checkout ? { ...checkout } : null;
 }
 
-export function salvarAguardandoPagamento(from, pedidoId) {
+export function salvarCheckout(from, checkout) {
   const sessao = obterSessao(from);
-  sessao.aguardandoPagamento = pedidoId;
-  return sessao.aguardandoPagamento;
+  sessao.checkout = checkout ? { ...checkout } : null;
+  return sessao.checkout ? { ...sessao.checkout } : null;
 }
 
-export function limparAguardandoPagamento(from) {
-  obterSessao(from).aguardandoPagamento = null;
+export function limparCheckout(from) {
+  obterSessao(from).checkout = null;
 }
 
 // Zera a sessão inteira: histórico, filtros, carrinho e últimos produtos mostrados.

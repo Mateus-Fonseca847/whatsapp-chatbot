@@ -26,6 +26,10 @@ export const DIFERENCIAIS_LOJA = [
   "durabilidade: não desbota nem solta costura"
 ];
 
+// Chave Pix da loja, citada nas instruções de pagamento. PROVISÓRIA — trocar pela chave
+// real antes de atender cliente de verdade.
+export const CHAVE_PIX = "chave-pix-a-definir@lojadepijamas.com";
+
 // Determinística de propósito: a apresentação precisa acontecer sempre na primeira
 // mensagem da conversa, e não "quase sempre", como seria se dependesse do modelo.
 export const SAUDACAO = `Oi! Eu sou a ${NOME_BOT}, da ${NOME_LOJA}.`;

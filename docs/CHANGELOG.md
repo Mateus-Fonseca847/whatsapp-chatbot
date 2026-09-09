@@ -6,6 +6,34 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Fechamento de pedido em duas etapas** (`src/bot/checkout.js`, novo). Substitui o
+  mecanismo anterior — registrar o pedido na hora e completar depois —, que rendeu dois
+  bugs seguidos: pedido gravado sem forma de pagamento e "seu carrinho está vazio"
+  respondido a quem tinha acabado de comprar. Agora o pedido só nasce completo.
+
+  - `finalizar_pedido` não registra mais nada: pergunta o endereço e abre um checkout
+    `{ etapa: "endereco" }`. O carrinho fica intacto até o fim.
+  - Com o endereço, o bot mostra um recibo (`montarResumoPedido`: itens, total e
+    endereço) e pergunta a forma de pagamento, avançando pra `{ etapa: "pagamento" }`.
+  - Só quando a forma de pagamento é reconhecida o pedido é registrado — com itens,
+    total, endereço e pagamento —, o carrinho é esvaziado e o checkout, encerrado.
+    `montarConfirmacaoFinal` fecha com resumo, instruções reais de pagamento
+    (`instrucoesPagamento`, que cita a `CHAVE_PIX` de `persona.js`) e o que acontece a
+    seguir.
+  - Resposta que não é forma de pagamento **não avança**: o bot pergunta de novo, porque
+    sem isso o pedido não fecha. Já pedir "finalizar" outra vez no meio do processo
+    lembra a etapa pendente em vez de reiniciar — antes isso respondia "carrinho vazio".
+  - Endereço é texto livre: validar formato criaria atrito com quem escreve do jeito que
+    sabe, e quem confere é quem vai separar o pedido.
+  - `sessionStore` trocou `aguardandoPagamento` por `checkout` (`obter`/`salvar`/`limpar`);
+    `registrarPedido` aceita `{ endereco, formaPagamento }`; `atualizarFormaPagamento` foi
+    removida junto com o fluxo que a justificava.
+
+- `src/test-checkout.js`: o fluxo inteiro (item, fechar, insistir em finalizar, endereço,
+  resposta inválida de pagamento, "pix"), conferindo em cada passo se o pedido já existe
+  e o que há no carrinho. `src/test-pagamento.js` saiu: testava o mecanismo substituído.
+  `src/test-carrinho.js` passou a completar as duas etapas antes de checar o pedido.
+
 - **A resposta sobre forma de pagamento agora é entendida.** O bot fechava o pedido e
   perguntava "Pix, cartão ou na entrega?", mas nada esperava a resposta: o "pix" do
   cliente virava mensagem nova, era interpretado como intenção de carrinho e voltava
