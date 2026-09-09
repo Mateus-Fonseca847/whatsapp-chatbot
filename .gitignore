@@ -16,3 +16,7 @@ Thumbs.db
 # Editores
 .vscode/
 .idea/
+
+# Credenciais da sessão do WhatsApp pareada via Baileys.
+# Tão sensível quanto o .env: quem tem essa pasta tem acesso à conta.
+baileys_auth/

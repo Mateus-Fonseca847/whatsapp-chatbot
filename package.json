@@ -7,8 +7,10 @@
     "start": "node src/server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "axios": "^1.7.2",
     "dotenv": "^16.4.5",
-    "axios": "^1.7.2"
+    "express": "^4.19.2",
+    "qrcode-terminal": "^0.12.0"
   }
 }

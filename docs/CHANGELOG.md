@@ -6,6 +6,37 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Canal Baileys: o WhatsApp funcionando hoje** (`src/channels/baileysWhatsapp.js`,
+  novo). Os dois canais anteriores dependem de aprovação: a Meta trava por Verificação
+  da Empresa (erro 130497) e a Twilio Sandbox esbarra na mesma restrição de país. O
+  Baileys conecta direto ao WhatsApp Web, como um aparelho pareado por QR code — sem
+  conta comercial, sem aprovação, sem restrição de país. É o único canal que funciona
+  agora, e não substitui os outros: os três convivem, um `npm run dev` sobe todos.
+
+  - `iniciarBaileys()` cria o socket com autenticação persistida em `baileys_auth/`
+    (`useMultiFileAuthState`), então o QR só é escaneado uma vez — reiniciar o servidor
+    reaproveita a sessão.
+  - O QR é desenhado no terminal por `qrcode-terminal` a partir do evento
+    `connection.update`. Na versão instalada (7.0.0-rc14) a opção `printQRInTerminal`
+    está descontinuada: ela só emite um aviso e não desenha nada, apesar de o README
+    ainda mostrar o exemplo antigo.
+  - Reconecta sozinho quando a conexão cai, exceto em logout explícito
+    (`DisconnectReason.loggedOut`) — nesse caso a sessão morreu no aparelho e insistir
+    só geraria loop; o log diz pra apagar `baileys_auth/` e parear de novo.
+  - Ignora mensagem de grupo, de status/transmissão e as enviadas pelo próprio bot.
+    Também ignora `messages.upsert` do tipo `append` (sincronização de histórico): sem
+    esse filtro o bot responderia conversas antigas ao parear.
+  - `syncFullHistory: false` — o padrão da lib é `true`, o que faz o WhatsApp despejar
+    o histórico inteiro no primeiro pareamento, pesado e sem utilidade aqui.
+  - Logger próprio em nível de aviso no lugar do pino padrão da lib, que despeja JSON
+    no terminal e atrapalharia justamente a leitura do QR code.
+  - `normalizarJid` reduz `"5524974012668@s.whatsapp.net"` a `"5524974012668"`, o mesmo
+    formato dos outros dois canais — a mesma pessoa cai na mesma sessão do
+    `sessionStore` independentemente de por onde falou.
+
+  `baileys_auth/` entrou no `.gitignore`: são as credenciais da sessão pareada, tão
+  sensíveis quanto o `.env` — na prática, dão acesso à conta do WhatsApp.
+
 - **Canal Twilio em paralelo ao Meta Cloud API** (`src/services/twilioWhatsapp.js`,
   novo). A Verificação da Empresa na Meta leva dias e trava o envio pra números
   brasileiros (erro 130497). A Twilio Sandbox destrava o teste de ponta a ponta agora,

@@ -8,6 +8,7 @@ import {
   enviarMensagemTwilio,
   normalizarNumeroWhatsapp
 } from "./services/twilioWhatsapp.js";
+import { iniciarBaileys } from "./channels/baileysWhatsapp.js";
 
 const app = express();
 app.use(express.json());
@@ -82,4 +83,10 @@ app.post("/webhook/twilio", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
+});
+
+// Os canais Meta e Twilio ficam esperando webhook no Express acima; o Baileys mantém
+// a própria conexão com o WhatsApp Web. Um npm run dev sobe os três.
+iniciarBaileys().catch((erro) => {
+  console.error("Não foi possível iniciar o canal Baileys:", erro.message);
 });
