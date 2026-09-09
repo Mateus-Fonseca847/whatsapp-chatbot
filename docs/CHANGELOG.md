@@ -6,6 +6,28 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Canal Twilio em paralelo ao Meta Cloud API** (`src/services/twilioWhatsapp.js`,
+  novo). A Verificação da Empresa na Meta leva dias e trava o envio pra números
+  brasileiros (erro 130497). A Twilio Sandbox destrava o teste de ponta a ponta agora,
+  sem tocar em nada do que já existe pra Meta — os dois canais convivem.
+
+  - `enviarMensagemTwilio(paraNumero, texto)`: POST pra
+    `api.twilio.com/2010-04-01/Accounts/{SID}/Messages.json`, Basic Auth, corpo como
+    `URLSearchParams`. Mesmo tratamento de erro do `claude.js` e do `whatsapp.js`:
+    loga `erro.response.data`, nunca o objeto inteiro do axios, e devolve `null` em vez
+    de lançar, pra não derrubar o handler do webhook.
+  - `normalizarNumeroWhatsapp(numeroTwilio)` reduz `"whatsapp:+5524974012668"` a
+    `"5524974012668"`, o mesmo formato que a Meta já usa. É o que garante que a mesma
+    pessoa testando pelos dois canais caia na **mesma sessão** do `sessionStore` — o
+    canal muda o transporte, não a conversa.
+  - Rota `POST /webhook/twilio` no `server.js`, respondendo na hora e chamando a mesma
+    `processarMensagem` do canal da Meta. Sem `GET` de verificação: aquele handshake é
+    exigência da Meta, a Twilio não pede.
+  - `express.urlencoded({ extended: true })` no `server.js`: a Twilio manda o webhook
+    como formulário, formato que o `express.json()` sozinho não entende.
+  - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` e `TWILIO_WHATSAPP_NUMBER` no
+    `.env.example`.
+
 - **Envio da resposta pelo WhatsApp** (`src/services/whatsapp.js`, que estava vazio
   desde o começo do projeto). O bot já decidia o que responder e só logava no console:
   a resposta nunca chegava ao cliente.

@@ -4,9 +4,16 @@ dotenv.config();
 
 import { processarMensagem } from "./bot/conversation.js";
 import { enviarMensagem } from "./services/whatsapp.js";
+import {
+  enviarMensagemTwilio,
+  normalizarNumeroWhatsapp
+} from "./services/twilioWhatsapp.js";
 
 const app = express();
 app.use(express.json());
+// A Twilio manda o webhook como formulário (application/x-www-form-urlencoded),
+// formato que o express.json() acima não entende.
+app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
@@ -47,6 +54,30 @@ app.post("/webhook", async (req, res) => {
   // O 200 pra Meta já foi enviado lá em cima, então esse await não atrasa o webhook.
   // enviarMensagem não lança: uma falha de envio é logada e a requisição termina normal.
   await enviarMensagem(from, resposta);
+});
+
+
+// Canal Twilio, em paralelo ao da Meta. Não tem GET de verificação: aquele handshake
+// é exigência da Meta, a Twilio não pede. A partir daqui é tudo igual — mesma
+// processarMensagem, mesma sessão, só o transporte é outro.
+app.post("/webhook/twilio", async (req, res) => {
+  // Responde na hora pra Twilio não reenviar o evento. O TwiML vazio evita o aviso
+  // 12300 (content-type inválido) no console da Twilio: quem entrega a resposta de
+  // verdade é a chamada de API logo abaixo, não este corpo.
+  res.type("text/xml").status(200).send("<Response></Response>");
+
+  const texto = req.body.Body;
+  // Só os dígitos, mesmo formato que a Meta usa: os dois canais caem na mesma sessão
+  const from = normalizarNumeroWhatsapp(req.body.From);
+
+  if (!from || !texto) return; // status de entrega, mídia sem texto, etc.
+
+  console.log(`[twilio] Mensagem de ${from}: ${texto}`);
+
+  const resposta = await processarMensagem(from, texto);
+  console.log(`[twilio] Resposta para ${from}: ${resposta}`);
+
+  await enviarMensagemTwilio(from, resposta);
 });
 
 app.listen(PORT, () => {
