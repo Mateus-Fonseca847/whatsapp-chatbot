@@ -6,6 +6,33 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Envio da resposta pelo WhatsApp** (`src/services/whatsapp.js`, que estava vazio
+  desde o começo do projeto). O bot já decidia o que responder e só logava no console:
+  a resposta nunca chegava ao cliente.
+
+  - `enviarMensagem(paraNumero, texto)` faz o POST pra
+    `graph.facebook.com/{versao}/{WHATSAPP_PHONE_NUMBER_ID}/messages` com o corpo de
+    mensagem de texto do Cloud API. A versão vem de `WHATSAPP_API_VERSION` (v25.0, que
+    é a dos exemplos de curl do painel), com fallback pra v21.0.
+  - As variáveis de ambiente são lidas dentro das funções, não no topo do módulo: em
+    ESM os imports rodam antes do `dotenv.config()` de quem importa, e no topo elas
+    ainda estariam vazias. Mesmo motivo pelo qual `claude.js` já fazia assim.
+  - Tratamento de erro no padrão do `claude.js`: loga `erro.response.data`, não o objeto
+    inteiro do axios. O erro **130497** (restrição de país) tem mensagem própria dizendo
+    que é a Verificação da Empresa pendente, e não um bug — é a falha esperada hoje.
+  - A função nunca lança: devolve `null` em qualquer falha, pra que um erro de envio não
+    derrube o handler do webhook.
+  - `server.js` chama `enviarMensagem(from, resposta)` depois de `processarMensagem`. O
+    `res.sendStatus(200)` continua sendo a primeira coisa do handler, então o envio não
+    atrasa a resposta pra Meta.
+
+  **O envio só funciona de ponta a ponta com números brasileiros depois que a
+  Verificação da Empresa (Etapa 3) for aprovada.** Até lá a Meta recusa com 130497. O
+  código está pronto: quando a verificação sair, nada muda aqui.
+
+- `src/test-whatsapp.js`: envia uma mensagem de teste para `WHATSAPP_TEST_NUMBER`
+  (nova variável no `.env` e no `.env.example`, junto de `WHATSAPP_API_VERSION`).
+
 - **Sugestão de peças parecidas** (`src/bot/similarProducts.js`, novo).
   Busca sem resultado terminava a conversa: o cliente pedia, não tinha, fim. Agora o bot
   oferece o que o catálogo tem de mais próximo — sempre com dados reais.
@@ -29,21 +56,6 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 - `src/test-similares.js`: tamanho em minúscula, busca sem resultado que rende
   alternativa (confere que o texto usa a cor e o preço reais da peça sugerida) e busca
   fora do catálogo (confere que não sugere nem inventa nada).
-
-### Corrigido
-
-- **Tamanho em minúscula não encontrava nada.** `buscarProdutos` comparava
-  `produto.tamanhos.includes(String(filtros.tamanho))` sem normalizar: cliente digitando
-  "gg" não achava o Pijama Curto Listrado, cadastrado como `"GG"`. Agora usa
-  `normalizarTexto` nos dois lados, como o resto das comparações.
-
-- **Especulação sobre o estoque na busca vazia.** O modelo escrevia coisas como "temos
-  opções, mas saem um pouco acima disso" ou "às vezes a gente tem com outro nome" sem
-  ter recebido nada do catálogo naquela chamada. `gerarRespostaBusca` agora aceita
-  `(produtosEncontrados, alternativas, historico)` e o system prompt cobre os três
-  cenários explicitamente — encontrados, encontrados/vazio com alternativas, e vazio sem
-  nada. No último, a instrução lista as frases proibidas: nada que sugira ou descarte a
-  existência de outras peças, porque nessa chamada o modelo não tem essa informação.
 
 - **Persona e resposta em linguagem natural** (`src/bot/persona.js`, novo).
   As respostas de busca eram templates fixos — sempre o mesmo texto engessado, com
@@ -148,6 +160,19 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
   resposta de volta pelo WhatsApp continua pendente (`src/services/whatsapp.js`).
 
 ### Corrigido
+
+- **Tamanho em minúscula não encontrava nada.** `buscarProdutos` comparava
+  `produto.tamanhos.includes(String(filtros.tamanho))` sem normalizar: cliente digitando
+  "gg" não achava o Pijama Curto Listrado, cadastrado como `"GG"`. Agora usa
+  `normalizarTexto` nos dois lados, como o resto das comparações.
+
+- **Especulação sobre o estoque na busca vazia.** O modelo escrevia coisas como "temos
+  opções, mas saem um pouco acima disso" ou "às vezes a gente tem com outro nome" sem
+  ter recebido nada do catálogo naquela chamada. `gerarRespostaBusca` agora aceita
+  `(produtosEncontrados, alternativas, historico)` e o system prompt cobre os três
+  cenários explicitamente — encontrados, encontrados/vazio com alternativas, e vazio sem
+  nada. No último, a instrução lista as frases proibidas: nada que sugira ou descarte a
+  existência de outras peças, porque nessa chamada o modelo não tem essa informação.
 
 - **Busca insensível a acento** (`src/utils/normalizarTexto.js`, novo). O catálogo grava
   `estacao: "verão"`, mas o `SYSTEM_PROMPT` instrui o modelo a devolver `"verao"`, e

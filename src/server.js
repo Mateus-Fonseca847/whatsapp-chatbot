@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { processarMensagem } from "./bot/conversation.js";
+import { enviarMensagem } from "./services/whatsapp.js";
 
 const app = express();
 app.use(express.json());
@@ -43,7 +44,9 @@ app.post("/webhook", async (req, res) => {
   const resposta = await processarMensagem(from, text);
   console.log(`Resposta para ${from}: ${resposta}`);
 
-  // TODO: enviar a resposta de volta pelo WhatsApp (src/services/whatsapp.js)
+  // O 200 pra Meta já foi enviado lá em cima, então esse await não atrasa o webhook.
+  // enviarMensagem não lança: uma falha de envio é logada e a requisição termina normal.
+  await enviarMensagem(from, resposta);
 });
 
 app.listen(PORT, () => {
