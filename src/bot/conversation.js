@@ -118,7 +118,7 @@ function tratarAdicionarCarrinho(from, filtros) {
   const texto =
     `Coloquei ${quantidade}x *${encontrado.nome}* no seu carrinho, ${formatarPreco(encontrado.preco)} cada` +
     `${quantidade > 1 ? ` (${formatarPreco(subtotal)})` : ""}. ` +
-    `Seu carrinho está em ${formatarPreco(total)}. Quer levar mais alguma coisa ou já fecho o pedido?`;
+    `Seu carrinho está em ${formatarPreco(total)}. Você se interessou por algo mais?`;
 
   return { texto, resumo: `Carrinho: +${quantidade}x ${encontrado.nome}, total ${formatarPreco(total)}` };
 }
@@ -156,7 +156,7 @@ function tratarFinalizarPedido(from) {
 
   const resumoItens = itens.map((item) => `${item.quantidade}x ${item.produto.nome}`).join(", ");
   const texto =
-    `Pedido ${pedido.id} anotado: ${resumoItens}. Total de ${formatarPreco(total)}.` +
+    `Pedido anotado: ${resumoItens}. Total de ${formatarPreco(total)}.` +
     `${eolTexto}${eolTexto}O pagamento a gente combina à parte — pode ser Pix, cartão ou acertar na entrega. ` +
     "Como você prefere?";
 
