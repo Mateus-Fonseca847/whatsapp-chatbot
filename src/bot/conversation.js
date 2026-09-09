@@ -256,6 +256,33 @@ function tratarFinalizarPedido(from) {
   };
 }
 
+// Mandar uma mensagem com foto por produto é ótimo pra 2 ou 3 peças e insuportável pra
+// 11. Passando disso, o bot pede um critério a mais em vez de despejar o catálogo.
+const MAX_PRODUTOS_POR_RESPOSTA = 4;
+
+// Sugere o critério que falta, não um genérico: quem já disse a cor não quer ouvir
+// "me diz a cor".
+function criterioQueFalta(filtros) {
+  if (!filtros.categoria) return "pra quem é (feminino, masculino ou infantil)";
+  if (!filtros.tamanho) return "o tamanho";
+  if (!filtros.cor) return "a cor";
+  if (!filtros.estacao) return "se é pra frio ou pra calor";
+  if (!filtros.manga) return "se prefere manga curta ou longa";
+  return "um detalhe a mais";
+}
+
+function pedirParaRefinar(produtos, filtros) {
+  const texto =
+    `Achei ${produtos.length} pijamas com esse critério — são muitos pra te mandar de uma vez. ` +
+    `Me diz ${criterioQueFalta(filtros)} que eu afino a busca?`;
+
+  return {
+    texto,
+    resumo: `Resultado: ${produtos.length} produtos, pedido refinamento da busca`,
+    produtos: []
+  };
+}
+
 // Busca vazia tem duas causas bem diferentes, e a resposta certa muda com elas:
 // o cliente pediu algo que a loja não tem ("sem_correspondencia"), ou pediu abaixo do
 // que a loja pratica ("preco"). Só a segunda vira conversa sobre preço.
@@ -353,6 +380,13 @@ async function montarResposta(from, filtros, conversa) {
   switch (filtros.intencao) {
     case "buscar_produto": {
       const produtos = buscarProdutos(filtros);
+
+      // Resultado largo demais: nada é enviado agora, e ultimosProdutosMostrados fica
+      // como estava — não faria sentido lembrar de peças que o cliente não viu.
+      if (produtos.length > MAX_PRODUTOS_POR_RESPOSTA) {
+        return pedirParaRefinar(produtos, filtros);
+      }
+
       const { alternativas, motivo } = escolherAlternativas(filtros, produtos);
       const mostrados = [...produtos, ...alternativas];
 

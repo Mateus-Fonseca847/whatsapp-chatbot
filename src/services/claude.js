@@ -14,6 +14,7 @@ Responda APENAS com um JSON válido, sem nenhum texto antes ou depois, neste for
   "tamanho": string ou null,
   "cor": string ou null,
   "tecido": string ou null,
+  "manga": "curta" | "longa" | null,
   "estacao": "verao" | "inverno" | null,
   "preco_maximo": number ou null,
   "produto_mencionado": string ou null,
@@ -24,6 +25,7 @@ Responda APENAS com um JSON válido, sem nenhum texto antes ou depois, neste for
 Regras importantes:
 - Para categoria "infantil", se o cliente mencionar a idade da criança (ex: "8 anos", "uns 6 anininhos"), use esse número como "tamanho", já que roupas infantis geralmente são numeradas por idade.
 - Para categoria "feminino", "masculino" ou "plus size", use os tamanhos padrão (PP, P, M, G, GG) quando mencionados.
+- "manga" é o comprimento da manga. Use "curta" para "manga curta", "short", "curtinho", "de manguinha"; e "longa" para "manga longa", "manga comprida", "comprido", "fechadinho". Deixe null se o cliente não falar de manga — não deduza pela estação.
 - Use "ver_catalogo" quando o cliente quiser ver o que a loja tem sem dar critério ("o que vocês têm?", "me mostra as opções", "quero ver as opções de menina"). Nesse caso preencha "categoria" só se ele indicar um segmento, e deixe null quando ele pedir tudo de forma genérica. Se ele descrever características (cor, tamanho, estação, preço), é "buscar_produto", não "ver_catalogo".
 - Use "adicionar_carrinho" quando o cliente quiser levar uma peça específica ("quero o infantil unicórnio", "vou levar dois desse", "pode colocar o floral"). Use "buscar_produto" quando ele estiver descrevendo o que procura, e não escolhendo.
 - "produto_mencionado" é o nome, ou o pedaço do nome, que o cliente citou ("infantil unicórnio", "o floral"). Copie o que ele disse, sem completar com nome de produto que ele não falou.

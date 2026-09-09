@@ -6,6 +6,32 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Busca por comprimento de manga.** "Quero manga curta" não tinha como funcionar: a
+  informação só existia implícita no nome ("Pijama Longo X"), e o filtro não reconhecia
+  o critério — a busca voltava sem nada extraído e devolvia o catálogo inteiro.
+
+  - Campo `manga` (`"curta"`/`"longa"`) nos 11 produtos. Os quatro infantis não dizem o
+    comprimento no nome: os três que têm foto (verde água, natalino e listrado azul)
+    foram conferidos na imagem e são de manga longa. O Unicórnio (`pj003`) não tem foto
+    e ficou como `"longa"` por inferência — **confirmar com a peça real**.
+  - Vale registrar por que não deu pra deduzir da estação: o Verde Água é de verão e tem
+    manga longa.
+  - `manga` entrou no enum de `interpretarPedido`, no filtro de `buscarProdutos`
+    (comparação exata via `normalizarTexto`) e em `validarContraCatalogo`, que descarta
+    valor que não exista no catálogo, como já acontece com cor e tecido.
+
+- **Limite de produtos por resposta.** Com uma mensagem e uma foto por peça, um resultado
+  amplo virava um despejo: "quero um pijama" mandava as 11 peças de uma vez. Passando de
+  4 resultados, o bot não envia nenhum — diz quantos encontrou e pede um critério a mais.
+
+  - O critério sugerido é o que **falta** naquela busca (categoria, tamanho, cor, estação
+    ou manga, nessa ordem): quem já disse a cor não ouve "me diz a cor".
+  - Nesse caso `ultimosProdutosMostrados` não é atualizado — não faz sentido lembrar de
+    peças que o cliente não chegou a ver.
+
+- `src/test-manga.js`: a pergunta real ("quero manga curta" devolve 2 peças, não 11), a
+  validação do campo e a busca vaga que agora pede refinamento.
+
 - **Fechamento de pedido em duas etapas** (`src/bot/checkout.js`, novo). Substitui o
   mecanismo anterior — registrar o pedido na hora e completar depois —, que rendeu dois
   bugs seguidos: pedido gravado sem forma de pagamento e "seu carrinho está vazio"

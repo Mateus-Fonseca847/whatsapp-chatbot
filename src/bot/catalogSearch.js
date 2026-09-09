@@ -30,6 +30,12 @@ function tecidoExisteNoCatalogo(tecido, catalogo) {
   return catalogo.some((produto) => tecidoBate(produto.tecido, tecido));
 }
 
+function mangaExisteNoCatalogo(manga, catalogo) {
+  const alvo = normalizarTexto(manga);
+  if (!alvo) return false;
+  return catalogo.some((produto) => normalizarTexto(produto.manga) === alvo);
+}
+
 function corExisteNoCatalogo(cor, catalogo) {
   // Mesma regra da busca: a cor vale se algum produto tiver uma cor da mesma família.
   const familiaCores = encontrarFamiliaDeCor(cor);
@@ -72,6 +78,12 @@ export function validarContraCatalogo(filtros, catalogo = catalog) {
     validados.cor = null;
   }
 
+  // "manga" tem domínio fechado ("curta"/"longa"), mas o modelo pode devolver outra
+  // coisa: só entra se algum produto do catálogo realmente tiver esse valor.
+  if (validados.manga && !mangaExisteNoCatalogo(validados.manga, catalogo)) {
+    validados.manga = null;
+  }
+
   return validados;
 }
 
@@ -102,6 +114,10 @@ export function buscarProdutos(filtros, catalogo = catalog) {
     }
 
     if (filtros.tecido && !tecidoBate(produto.tecido, filtros.tecido)) {
+      return false;
+    }
+
+    if (filtros.manga && normalizarTexto(produto.manga) !== normalizarTexto(filtros.manga)) {
       return false;
     }
 
