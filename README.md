@@ -1,4 +1,4 @@
-# Ana: Atendimento Inteligente via WhatsApp
+# Atendimento Inteligente via WhatsApp
 
 Bot de atendimento automatizado para lojas de roupa, integrado ao WhatsApp, capaz de interpretar pedidos em linguagem natural, navegar por catálogo, montar carrinho e conduzir o cliente até o fechamento do pedido.
 
