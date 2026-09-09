@@ -1,5 +1,5 @@
 import axios from "axios";
-import { NOME_BOT, NOME_LOJA, TOM_DE_VOZ } from "../bot/persona.js";
+import { NOME_BOT, NOME_LOJA, TOM_DE_VOZ, DIFERENCIAIS_LOJA } from "../bot/persona.js";
 import { formatarPreco } from "../utils/formatarPreco.js";
 import { CAMPOS_POR_MENSAGEM } from "../bot/filtrosState.js";
 
@@ -120,7 +120,7 @@ function listarProdutosParaPrompt(produtos) {
     .join("\n");
 }
 
-function montarSystemPromptResposta(produtos, alternativas) {
+function montarSystemPromptResposta(produtos, alternativas, motivoAlternativas) {
   const partes = [
     `Você é a ${NOME_BOT}, atendente da ${NOME_LOJA} no WhatsApp.
 
@@ -135,13 +135,28 @@ Não se apresente nem diga o seu nome, e não comece com saudação ("Oi", "Olá
   if (produtos.length > 0) {
     partes.push(`Produtos encontrados na busca, exatamente o que o cliente pediu:
 ${listarProdutosParaPrompt(produtos)}`);
-  } else {
+  } else if (motivoAlternativas !== "preco_baixo") {
     partes.push(
       "A busca no catálogo não encontrou nenhum produto com os critérios que o cliente pediu. Reconheça isso com empatia."
     );
   }
 
-  if (alternativas.length > 0) {
+  if (alternativas.length > 0 && motivoAlternativas === "preco_baixo") {
+    // O catálogo TEM o que ele pediu; o que não bate é o valor. Recusar sem explicar o
+    // porquê soa arrogante, e deixar o modelo inventar o porquê é pior ainda — daí a
+    // lista fechada de motivos reais.
+    partes.push(`O cliente pediu uma peça por um valor abaixo do que a loja pratica. Não é que não exista o que ele quer: o que existe custa mais do que ele falou.
+
+Reconheça isso com gentileza, sem soar defensiva e sem fazer o cliente se sentir mal pelo valor que falou.
+
+Explique o porquê citando no máximo DOIS destes motivos, e nenhum outro. Escolha os dois que mais combinam com o que o cliente pediu e não mencione os demais — listar todos soa a discurso de vendedor. Nunca invente uma razão que não esteja nesta lista:
+${DIFERENCIAIS_LOJA.map((diferencial) => `- ${diferencial}`).join("\n")}
+
+Peças que atendem o resto do pedido, da mais barata para a mais cara:
+${listarProdutosParaPrompt(alternativas)}
+
+Ofereça essas peças como o que mais se aproxima do que ele pediu. Não prometa desconto, promoção, parcelamento nem nada que não esteja nesta mensagem.`);
+  } else if (alternativas.length > 0) {
     partes.push(`Peças parecidas que existem no catálogo, para oferecer como alternativa:
 ${listarProdutosParaPrompt(alternativas)}
 
@@ -168,8 +183,15 @@ Informe o preço de todo produto que mencionar, copiando o valor exatamente como
 // `produtosEncontrados` e `alternativas` já vêm do catálogo, filtrados pelo código — a IA
 // escreve o texto, mas nunca decide quais produtos existem. `historico` são as mensagens
 // da conversa terminando na mensagem atual do cliente (a API exige que a última seja dele).
+// `motivoAlternativas` diz por que as alternativas estão sendo oferecidas: "semelhante"
+// (não achamos o que ele pediu) ou "preco_baixo" (achamos, mas custa mais que o teto dele).
 // Devolve null se a chamada falhar, pra quem chamou cair no texto de fallback.
-export async function gerarRespostaBusca(produtosEncontrados, alternativas = [], historico = []) {
+export async function gerarRespostaBusca(
+  produtosEncontrados,
+  alternativas = [],
+  historico = [],
+  motivoAlternativas = "semelhante"
+) {
   garantirApiKey();
 
   const produtos = produtosEncontrados ?? [];
@@ -183,7 +205,7 @@ export async function gerarRespostaBusca(produtosEncontrados, alternativas = [],
       {
         model: MODEL,
         max_tokens: 500,
-        system: montarSystemPromptResposta(produtos, parecidas),
+        system: montarSystemPromptResposta(produtos, parecidas, motivoAlternativas),
         messages
       },
       { headers: cabecalhos() }

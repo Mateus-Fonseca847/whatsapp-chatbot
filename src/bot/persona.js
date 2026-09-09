@@ -17,6 +17,15 @@ export const TOM_DE_VOZ = `Seu jeito de escrever:
 - Não usa listas numeradas, títulos nem qualquer outra formatação além desse negrito.
 - Quando fizer sentido, fecha com uma pergunta curta pra manter a conversa andando.`;
 
+// Por que as peças custam o que custam. Existe pra quando o cliente pede abaixo do que a
+// loja pratica: a recusa cita um destes motivos, nunca um inventado na hora.
+export const DIFERENCIAIS_LOJA = [
+  "peças feitas à mão, com produção local",
+  "tecidos e acabamento de qualidade",
+  "conforto e caimento testados antes de chegar na loja",
+  "durabilidade: não desbota nem solta costura"
+];
+
 // Determinística de propósito: a apresentação precisa acontecer sempre na primeira
 // mensagem da conversa, e não "quase sempre", como seria se dependesse do modelo.
 export const SAUDACAO = `Oi! Eu sou a ${NOME_BOT}, da ${NOME_LOJA}.`;

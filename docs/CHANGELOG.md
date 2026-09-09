@@ -6,6 +6,30 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Recusa educada quando o pedido vem abaixo do preço praticado.** A busca vazia era
+  tratada de um jeito só, mas "não temos nada assim" e "temos, só que custa mais do que
+  você falou" são conversas diferentes — e a segunda estava sendo respondida como se
+  fosse a primeira, perdendo a venda sem nem explicar o porquê.
+
+  - `diagnosticarBuscaVazia(filtros, catalogo)` em `catalogSearch.js` refaz a mesma busca
+    sem o teto de preço. Aparecendo produtos, o motivo é `"preco"` e devolve as até 3
+    opções mais baratas que atendem o resto do pedido, da mais barata pra mais cara;
+    continuando vazio, é `"sem_correspondencia"` e o fluxo do Prompt 4 segue intacto.
+  - `DIFERENCIAIS_LOJA` em `persona.js`: os quatro motivos reais pelos quais a peça custa
+    o que custa. Lista fechada de propósito — recusar sem explicar soa arrogante, e
+    deixar o modelo inventar a justificativa é pior ainda.
+  - `gerarRespostaBusca` ganhou `motivoAlternativas` (`"semelhante"` por padrão ou
+    `"preco_baixo"`). No caso de preço, o system prompt manda reconhecer o limite com
+    gentileza, citar no máximo dois motivos **da lista** e oferecer as peças mais baratas
+    com nome, preço e tamanhos reais. Também proíbe prometer desconto, promoção ou
+    parcelamento — coisas que o bot não tem como garantir.
+  - Em `conversation.js`, `escolherAlternativas` concentra a decisão de quais alternativas
+    oferecer e por quê, mantendo o branch de busca legível.
+
+- `src/test-precobaixo.js`: o pedido abaixo do praticado (diagnóstico, texto gerado e
+  fluxo completo por `processarMensagem`) e a categoria inexistente, conferindo que esta
+  continua sem linguagem de recusa por preço.
+
 - **Resposta para mensagem que não é texto** (canal Baileys). Áudio, figurinha, imagem,
   documento e localização caíam num `return` silencioso: o cliente mandava e não recebia
   nada, o que parece bot quebrado, não bot que só não entende aquele formato.

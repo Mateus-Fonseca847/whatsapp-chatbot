@@ -1,5 +1,10 @@
 import { interpretarPedido, gerarRespostaBusca } from "../services/claude.js";
-import { buscarProdutos, validarContraCatalogo, listarCategorias } from "./catalogSearch.js";
+import {
+  buscarProdutos,
+  validarContraCatalogo,
+  listarCategorias,
+  diagnosticarBuscaVazia
+} from "./catalogSearch.js";
 import {
   obterHistorico,
   adicionarMensagem,
@@ -224,6 +229,22 @@ function tratarFinalizarPedido(from) {
   };
 }
 
+// Busca vazia tem duas causas bem diferentes, e a resposta certa muda com elas:
+// o cliente pediu algo que a loja não tem ("sem_correspondencia"), ou pediu abaixo do
+// que a loja pratica ("preco"). Só a segunda vira conversa sobre preço.
+function escolherAlternativas(filtros, encontrados) {
+  if (encontrados.length === 0 && filtros.preco_maximo) {
+    const { motivo, opcoes } = diagnosticarBuscaVazia(filtros, catalog);
+
+    if (motivo === "preco") {
+      return { alternativas: opcoes, motivo: "preco_baixo" };
+    }
+  }
+
+  // Qualquer outro caso segue o fluxo de peças parecidas, inalterado.
+  return { alternativas: buscarAlternativas(filtros, encontrados), motivo: "semelhante" };
+}
+
 // Devolve { texto, resumo }: `texto` é o que o cliente recebe, `resumo` é o que
 // guardamos como turno "assistant" no histórico. São propósitos diferentes — o cliente
 // lê linguagem natural, o modelo lê o resumo enxuto na próxima mensagem.
@@ -236,7 +257,7 @@ async function montarResposta(from, filtros, conversa) {
   switch (filtros.intencao) {
     case "buscar_produto": {
       const produtos = buscarProdutos(filtros);
-      const alternativas = buscarAlternativas(filtros, produtos);
+      const { alternativas, motivo } = escolherAlternativas(filtros, produtos);
       const mostrados = [...produtos, ...alternativas];
 
       // Guarda o que foi mostrado (encontrados e sugeridos) pra que a próxima mensagem
@@ -246,7 +267,7 @@ async function montarResposta(from, filtros, conversa) {
       }
 
       // A busca é do código; só o texto é da IA. Se a geração falhar, cai no template.
-      const gerado = await gerarRespostaBusca(produtos, alternativas, conversa);
+      const gerado = await gerarRespostaBusca(produtos, alternativas, conversa, motivo);
 
       return {
         texto: gerado ?? montarRespostaBusca(produtos),

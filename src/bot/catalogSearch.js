@@ -39,6 +39,22 @@ function corExisteNoCatalogo(cor, catalogo) {
 // As categorias que o catálogo realmente tem, na ordem em que aparecem. Lida do
 // catálogo em vez de fixada no código: quando os produtos reais da loja entrarem, a
 // lista se ajusta sozinha, sem ninguém precisar lembrar de atualizar uma constante.
+// Por que a busca não achou nada? Refaz a mesma busca sem o teto de preço: se aí
+// aparecem produtos, o problema era só o valor — o que é uma conversa diferente de
+// "não temos nada assim". Devolve as opções mais baratas que atendem o resto do pedido.
+export function diagnosticarBuscaVazia(filtros, catalogo = catalog) {
+  const { preco_maximo, ...semPreco } = filtros ?? {};
+
+  const encontrados = buscarProdutos(semPreco, catalogo);
+
+  if (encontrados.length === 0) {
+    return { motivo: "sem_correspondencia", opcoes: [] };
+  }
+
+  const opcoes = [...encontrados].sort((a, b) => a.preco - b.preco).slice(0, 3);
+  return { motivo: "preco", opcoes };
+}
+
 export function listarCategorias(catalogo = catalog) {
   return [...new Set((catalogo ?? []).map((produto) => produto.categoria).filter(Boolean))];
 }
