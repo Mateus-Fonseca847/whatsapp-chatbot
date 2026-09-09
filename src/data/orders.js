@@ -13,7 +13,9 @@ export function registrarPedido(from, carrinho, total) {
     itens: (carrinho ?? []).map((item) => ({ ...item })),
     total,
     criadoEm: new Date().toISOString(),
-    status: "pendente"
+    status: "pendente",
+    // Preenchido quando o cliente responde à pergunta de forma de pagamento.
+    formaPagamento: null
   };
 
   pedidos.push(pedido);
@@ -21,6 +23,16 @@ export function registrarPedido(from, carrinho, total) {
 }
 
 // `from` opcional: sem ele devolve todos os pedidos registrados.
+// A forma de pagamento chega numa mensagem separada, depois do pedido já registrado.
+// Devolve o pedido atualizado, ou null se o id não existir.
+export function atualizarFormaPagamento(pedidoId, forma) {
+  const pedido = pedidos.find((p) => p.id === pedidoId);
+  if (!pedido) return null;
+
+  pedido.formaPagamento = forma;
+  return { ...pedido };
+}
+
 export function listarPedidos(from) {
   const filtrados = from ? pedidos.filter((pedido) => pedido.from === from) : pedidos;
   return filtrados.map((pedido) => ({ ...pedido }));

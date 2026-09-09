@@ -10,6 +10,8 @@
 //   - carrinho: [{ produtoId, quantidade }] do que o cliente quer levar
 //   - ultimosProdutosMostrados: o que apareceu na última resposta, pra resolver
 //     referências como "quero o unicórnio" sem adivinhação
+//   - aguardandoPagamento: id do pedido que fechou e está esperando o cliente dizer
+//     como vai pagar — sem isso a resposta dele viraria uma mensagem solta
 
 const MAX_MENSAGENS = 10; // 5 trocas (cliente + bot); acima disso a conversa encarece cada chamada à API sem ganho
 
@@ -18,7 +20,14 @@ const sessoes = new Map();
 function obterSessao(from) {
   let sessao = sessoes.get(from);
   if (!sessao) {
-    sessao = { historico: [], filtros: null, carrinho: [], ultimosProdutosMostrados: [] };
+    sessao = {
+      historico: [],
+      filtros: null,
+      carrinho: [],
+      ultimosProdutosMostrados: [],
+      // Id do pedido cuja forma de pagamento ainda não foi respondida
+      aguardandoPagamento: null
+    };
     sessoes.set(from, sessao);
   }
   return sessao;
@@ -70,6 +79,20 @@ export function salvarUltimosProdutosMostrados(from, produtos) {
   const sessao = obterSessao(from);
   sessao.ultimosProdutosMostrados = [...(produtos ?? [])];
   return [...sessao.ultimosProdutosMostrados];
+}
+
+export function obterAguardandoPagamento(from) {
+  return obterSessao(from).aguardandoPagamento;
+}
+
+export function salvarAguardandoPagamento(from, pedidoId) {
+  const sessao = obterSessao(from);
+  sessao.aguardandoPagamento = pedidoId;
+  return sessao.aguardandoPagamento;
+}
+
+export function limparAguardandoPagamento(from) {
+  obterSessao(from).aguardandoPagamento = null;
 }
 
 // Zera a sessão inteira: histórico, filtros, carrinho e últimos produtos mostrados.
