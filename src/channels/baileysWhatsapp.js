@@ -29,17 +29,35 @@ const PASTA_AUTH = path.resolve("baileys_auth");
 // nem sempre acontece. O PNG é o plano B: abre em qualquer visualizador de imagem.
 const ARQUIVO_QR = path.resolve("baileys-qr.png");
 
+// Quanto tempo sem evento de histórico pra considerar a sincronização encerrada. Ao
+// parear, o WhatsApp despeja as conversas antigas em rajada; o silêncio marca o fim.
+const SILENCIO_ATE_PRONTO_MS = 3000;
+
 // O logger padrão do Baileys é um pino em nível info, que despeja JSON no terminal e
 // atrapalha a leitura do QR code. Como só nos interessam avisos e erros, passamos um
 // logger mínimo com a mesma interface (a lib chama child/trace/debug/info/warn/error).
+// A lib chama no estilo pino: logger.warn({ contexto }, "mensagem"). Imprimir os dois
+// espalha objetos multilinha pelo terminal; o que interessa é a mensagem.
+function mensagemDoLog(args) {
+  const texto = args.find((arg) => typeof arg === "string");
+  if (texto) return texto;
+
+  // Sem mensagem legível: resume o objeto numa linha só
+  try {
+    return JSON.stringify(args[0]);
+  } catch {
+    return String(args[0]);
+  }
+}
+
 const silencioso = {
   level: "warn",
   child: () => silencioso,
   trace: () => {},
   debug: () => {},
   info: () => {},
-  warn: (...args) => console.warn("[baileys]", ...args),
-  error: (...args) => console.error("[baileys]", ...args)
+  warn: (...args) => console.warn("[baileys]", mensagemDoLog(args)),
+  error: (...args) => console.error("[baileys]", mensagemDoLog(args))
 };
 
 // "5524974012668@s.whatsapp.net" -> "5524974012668".
@@ -253,6 +271,24 @@ export async function iniciarBaileys() {
     syncFullHistory: false
   });
 
+  // Mensagens de histórico só são contadas; imprimir uma linha por conversa antiga
+  // enterra no terminal a única informação útil aqui: quando dá pra começar a testar.
+  let historicoIgnorado = 0;
+  let timerPronto = null;
+
+  function anunciarQuandoParar() {
+    clearTimeout(timerPronto);
+    timerPronto = setTimeout(() => {
+      if (historicoIgnorado > 0) {
+        console.log(
+          `[baileys] Sincronização concluída (${historicoIgnorado} mensagens de histórico ignoradas). Pronto para receber mensagens.`
+        );
+      } else {
+        console.log("[baileys] Pronto para receber mensagens.");
+      }
+    }, SILENCIO_ATE_PRONTO_MS);
+  }
+
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", (update) => {
@@ -280,6 +316,8 @@ export async function iniciarBaileys() {
 
     if (connection === "open") {
       console.log("[baileys] Conectado ao WhatsApp.");
+      // Conta vazia não gera rajada nenhuma: o aviso de pronto sai logo em seguida.
+      anunciarQuandoParar();
       return;
     }
 
@@ -303,17 +341,20 @@ export async function iniciarBaileys() {
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    // DIAGNÓSTICO TEMPORÁRIO: a key de TODA mensagem que chega, antes de qualquer
-    // filtro — inclusive as que serão descartadas por tipo logo abaixo. É o que mostra
-    // se um contato chega como @lid em vez de @s.whatsapp.net, e se alguma mensagem está
-    // sendo perdida no filtro de tipo. Remover quando o comportamento estiver confirmado.
+    // "notify" é mensagem chegando agora. "append" é sincronização de histórico — sem
+    // esse filtro, o bot responderia conversas antigas ao parear.
+    if (type !== "notify") {
+      historicoIgnorado += messages.length;
+      anunciarQuandoParar();
+      return;
+    }
+
+    // DIAGNÓSTICO TEMPORÁRIO: a key de cada mensagem que chega de verdade, antes dos
+    // filtros de conversa. É o que mostra se um contato chega como @lid em vez de
+    // @s.whatsapp.net. Remover quando o comportamento estiver confirmado.
     for (const msg of messages) {
       console.log(`[baileys][diag] type=${type} key:`, JSON.stringify(msg.key));
     }
-
-    // "notify" é mensagem chegando agora. "append" é sincronização de histórico — sem
-    // esse filtro, o bot responderia conversas antigas ao parear.
-    if (type !== "notify") return;
 
     for (const msg of messages) {
       await tratarMensagem(sock, msg);
