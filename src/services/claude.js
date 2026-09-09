@@ -111,42 +111,60 @@ function listarProdutosParaPrompt(produtos) {
     .join("\n");
 }
 
-function montarSystemPromptResposta(produtos) {
-  const base = `Você é a ${NOME_BOT}, atendente da ${NOME_LOJA} no WhatsApp.
+function montarSystemPromptResposta(produtos, alternativas) {
+  const partes = [
+    `Você é a ${NOME_BOT}, atendente da ${NOME_LOJA} no WhatsApp.
 
 ${TOM_DE_VOZ}
 
 Escreva a resposta para a última mensagem do cliente. Responda apenas com o texto da mensagem, sem aspas e sem comentários seus.
-Não se apresente nem diga o seu nome: quando a apresentação é necessária, ela já é feita antes da sua resposta.`;
+Não se apresente nem diga o seu nome, e não comece com saudação ("Oi", "Olá", "Bom dia"): quando a apresentação é necessária, ela já é feita antes da sua resposta, e cumprimentar de novo soa repetitivo. Vá direto ao assunto.`
+  ];
 
-  // Quem decide o que existe é o código, não o modelo: a lista abaixo é o resultado da
-  // busca no catálogo. Sem essa amarra, a IA "ajuda" inventando produto e preço.
-  if (produtos.length === 0) {
-    return `${base}
-
-A busca no catálogo não encontrou nenhum produto com os critérios que o cliente pediu.
-Reconheça isso com empatia e convide o cliente a descrever o que procura de outro jeito.
-Você não tem nenhum produto pra oferecer nesta resposta: nunca invente, cite ou sugira um produto específico, nem prometa avisar depois.`;
+  // Quem decide o que existe é o código, não o modelo: as listas abaixo saem da busca no
+  // catálogo. Sem essa amarra, a IA "ajuda" inventando produto, preço e disponibilidade.
+  if (produtos.length > 0) {
+    partes.push(`Produtos encontrados na busca, exatamente o que o cliente pediu:
+${listarProdutosParaPrompt(produtos)}`);
+  } else {
+    partes.push(
+      "A busca no catálogo não encontrou nenhum produto com os critérios que o cliente pediu. Reconheça isso com empatia."
+    );
   }
 
-  return `${base}
+  if (alternativas.length > 0) {
+    partes.push(`Peças parecidas que existem no catálogo, para oferecer como alternativa:
+${listarProdutosParaPrompt(alternativas)}
 
-Produtos encontrados na busca (esta é a lista completa do que existe pra oferecer agora):
-${listarProdutosParaPrompt(produtos)}
+${produtos.length > 0 ? "Apresente primeiro o que foi encontrado e depois ofereça a alternativa." : "Ofereça essas peças como o que há de mais próximo."}
+Deixe claro que são peças parecidas, e não exatamente o que o cliente pediu.`);
+  } else if (produtos.length === 0) {
+    // O modelo já especulou aqui ("temos opções, mas mais caras") sem ter recebido nada
+    // do catálogo. Nesta chamada ele não sabe o que a loja tem — então não fala disso.
+    partes.push(`Você não tem nenhuma peça pra oferecer nesta resposta.
+Não cite, sugira nem invente produto nenhum, e não prometa avisar depois.
+Não diga nada sobre o que a loja tem ou deixa de ter além do que está nesta mensagem, porque você não tem essa informação aqui: nada de "temos outras opções", "só temos mais caro", "às vezes temos com outro nome", "pode ser que tenha" ou qualquer frase que insinue ou descarte a existência de outras peças.
+Convide o cliente a descrever o que procura de outro jeito, sem prometer nem sugerir disponibilidade.`);
+  }
 
-Mencione apenas os produtos listados acima, com exatamente os preços, cores e tamanhos fornecidos. Nunca invente ou sugira produtos que não estejam nesta lista.
-Informe o preço de todo produto que mencionar, copiando o valor exatamente como está na lista.`;
+  if (produtos.length > 0 || alternativas.length > 0) {
+    partes.push(`Mencione apenas os produtos listados acima, com exatamente os preços, cores e tamanhos fornecidos. Nunca invente ou sugira produtos que não estejam nessas listas.
+Informe o preço de todo produto que mencionar, copiando o valor exatamente como está na lista.`);
+  }
+
+  return partes.join("\n\n");
 }
 
 // Gera a resposta em linguagem natural para o resultado de uma busca.
-// `produtosEncontrados` já vem filtrado pelo código — a IA escreve o texto, mas nunca
-// decide quais produtos existem. `historico` são as mensagens da conversa terminando na
-// mensagem atual do cliente (a API exige que a última seja do cliente).
+// `produtosEncontrados` e `alternativas` já vêm do catálogo, filtrados pelo código — a IA
+// escreve o texto, mas nunca decide quais produtos existem. `historico` são as mensagens
+// da conversa terminando na mensagem atual do cliente (a API exige que a última seja dele).
 // Devolve null se a chamada falhar, pra quem chamou cair no texto de fallback.
-export async function gerarRespostaBusca(produtosEncontrados, historico = []) {
+export async function gerarRespostaBusca(produtosEncontrados, alternativas = [], historico = []) {
   garantirApiKey();
 
   const produtos = produtosEncontrados ?? [];
+  const parecidas = alternativas ?? [];
   const messages =
     historico.length > 0 ? historico : [{ role: "user", content: "Oi, o que vocês têm?" }];
 
@@ -156,7 +174,7 @@ export async function gerarRespostaBusca(produtosEncontrados, historico = []) {
       {
         model: MODEL,
         max_tokens: 500,
-        system: montarSystemPromptResposta(produtos),
+        system: montarSystemPromptResposta(produtos, parecidas),
         messages
       },
       { headers: cabecalhos() }

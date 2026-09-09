@@ -9,7 +9,9 @@ import { normalizarTexto } from "../utils/normalizarTexto.js";
 // Campos de domínio fechado (categoria, estacao, intencao) já são restringidos pelo
 // prompt, e tamanho/preco_maximo variam legitimamente sem existir no catálogo.
 
-function tecidoBate(tecidoProduto, tecidoBuscado) {
+// Exportados pra que a sugestão de peças parecidas (similarProducts.js) use exatamente
+// os mesmos critérios da busca — o que "bate" tem que ser a mesma coisa nos dois lugares.
+export function tecidoBate(tecidoProduto, tecidoBuscado) {
   const alvo = normalizarTexto(tecidoBuscado);
   if (!alvo) return false;
 
@@ -19,7 +21,7 @@ function tecidoBate(tecidoProduto, tecidoBuscado) {
   return doProduto.includes(alvo) || alvo.includes(doProduto);
 }
 
-function corBate(corProduto, familiaCores) {
+export function corBate(corProduto, familiaCores) {
   const doProduto = normalizarTexto(corProduto);
   return familiaCores.some((corDaFamilia) => doProduto.includes(corDaFamilia));
 }
@@ -65,8 +67,11 @@ export function buscarProdutos(filtros, catalogo = catalog) {
       return false;
     }
 
-    if (filtros.tamanho && !produto.tamanhos.includes(String(filtros.tamanho))) {
-      return false;
+    // Normalizado dos dois lados como o resto: o cliente digita "gg" e o catálogo grava "GG"
+    if (filtros.tamanho) {
+      const tamanhoBuscado = normalizarTexto(filtros.tamanho);
+      const temTamanho = produto.tamanhos.some((t) => normalizarTexto(t) === tamanhoBuscado);
+      if (!temTamanho) return false;
     }
 
     if (familiaCores && !corBate(produto.cor, familiaCores)) {

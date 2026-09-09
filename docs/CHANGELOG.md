@@ -6,6 +6,45 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Sugestão de peças parecidas** (`src/bot/similarProducts.js`, novo).
+  Busca sem resultado terminava a conversa: o cliente pedia, não tinha, fim. Agora o bot
+  oferece o que o catálogo tem de mais próximo — sempre com dados reais.
+
+  - `sugerirSemelhantes(filtros, catalogo, jaEncontrados)` pontua cada produto por
+    critério que bate: `categoria` e `estacao` valem 3 (mudam a peça de prateleira),
+    `cor` da mesma família e `tecido` valem 2 (são preferência), preço até 20% acima do
+    `preco_maximo` vale 1 (desempate). Devolve os 3 melhores acima do piso.
+  - `tamanho` não pontua de propósito: peça parecida em outro tamanho ainda vale ser
+    mostrada, e quem decide se serve é o cliente.
+  - Piso de 3 pontos: um critério forte, ou cor + tecido juntos. Sem piso, "não achei"
+    viraria "toma qualquer coisa" e o cliente para de confiar no que o bot diz. Nada
+    atingindo o piso devolve array vazio — um "não temos nada parecido" honesto.
+  - Quanto pior o resultado da busca, mais espaço pra sugestão: nada encontrado sugere
+    até 3; 1 ou 2 encontrados sugerem no máximo 1, e só com pontuação alta (dois
+    critérios fortes), pra não poluir a resposta de quem já tem opção; 3 ou mais não
+    sugerem nada.
+  - `corBate` e `tecidoBate` foram exportados de `catalogSearch.js` e reaproveitados
+    aqui: o que conta como "bate" precisa ser a mesma coisa na busca e na sugestão.
+
+- `src/test-similares.js`: tamanho em minúscula, busca sem resultado que rende
+  alternativa (confere que o texto usa a cor e o preço reais da peça sugerida) e busca
+  fora do catálogo (confere que não sugere nem inventa nada).
+
+### Corrigido
+
+- **Tamanho em minúscula não encontrava nada.** `buscarProdutos` comparava
+  `produto.tamanhos.includes(String(filtros.tamanho))` sem normalizar: cliente digitando
+  "gg" não achava o Pijama Curto Listrado, cadastrado como `"GG"`. Agora usa
+  `normalizarTexto` nos dois lados, como o resto das comparações.
+
+- **Especulação sobre o estoque na busca vazia.** O modelo escrevia coisas como "temos
+  opções, mas saem um pouco acima disso" ou "às vezes a gente tem com outro nome" sem
+  ter recebido nada do catálogo naquela chamada. `gerarRespostaBusca` agora aceita
+  `(produtosEncontrados, alternativas, historico)` e o system prompt cobre os três
+  cenários explicitamente — encontrados, encontrados/vazio com alternativas, e vazio sem
+  nada. No último, a instrução lista as frases proibidas: nada que sugira ou descarte a
+  existência de outras peças, porque nessa chamada o modelo não tem essa informação.
+
 - **Persona e resposta em linguagem natural** (`src/bot/persona.js`, novo).
   As respostas de busca eram templates fixos — sempre o mesmo texto engessado, com
   cara de listagem de resultado, não de atendimento.
@@ -133,6 +172,11 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
     `validarContraCatalogo` já fazia, pra poder ser testado sem depender do catálogo real.
   - A comparação de `tecido` na busca passou a ser bidirecional, que era como a validação
     já comparava. Antes um tecido podia ser aceito na validação e não bater na busca.
+
+- `src/test-persona.js` passou a usar "plus size" na segunda mensagem. A pergunta antiga
+  ("tem alguma coisa até 20 reais?") agora rende uma alternativa legítima — o teste
+  cobria "vazio sem alternativas" e continua cobrindo, com uma busca que de fato não tem
+  nada parecido. O caso com alternativa é o `test-similares.js`.
 
 - `src/test-session.js` passou a separar as chamadas de interpretação das de geração
   antes de conferir o payload: agora cada mensagem gera duas chamadas à API, e o teste

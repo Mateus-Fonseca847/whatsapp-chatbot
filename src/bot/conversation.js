@@ -7,6 +7,8 @@ import {
   salvarFiltros
 } from "./sessionStore.js";
 import { mesclarFiltros } from "./filtrosState.js";
+import { sugerirSemelhantes, PONTUACAO_ALTA } from "./similarProducts.js";
+import { catalog } from "../data/catalog.js";
 import { SAUDACAO } from "./persona.js";
 import { formatarPreco } from "../utils/formatarPreco.js";
 
@@ -38,6 +40,23 @@ function resumirBusca(produtos) {
   return `Resultado: ${produtos.length} produto${plural} encontrado${plural} — ${nomes}`;
 }
 
+// Quanto pior o resultado da busca, mais espaço pra sugerir peça parecida:
+// - nada encontrado: sugere até 3, é o que o cliente tem pra olhar
+// - 1 ou 2 encontrados: no máximo 1, e só se for bem parecida — o cliente já tem opção
+// - 3 ou mais: não sugere nada, a resposta já está cheia
+function buscarAlternativas(filtros, encontrados) {
+  if (encontrados.length >= 3) return [];
+
+  if (encontrados.length === 0) {
+    return sugerirSemelhantes(filtros, catalog, encontrados);
+  }
+
+  return sugerirSemelhantes(filtros, catalog, encontrados, {
+    limite: 1,
+    pontuacaoMinima: PONTUACAO_ALTA
+  });
+}
+
 // Devolve { texto, resumo }: `texto` é o que o cliente recebe, `resumo` é o que
 // guardamos como turno "assistant" no histórico. São propósitos diferentes — o cliente
 // lê linguagem natural, o modelo lê o resumo enxuto na próxima mensagem.
@@ -50,9 +69,10 @@ async function montarResposta(filtros, conversa) {
   switch (filtros.intencao) {
     case "buscar_produto": {
       const produtos = buscarProdutos(filtros);
+      const alternativas = buscarAlternativas(filtros, produtos);
 
       // A busca é do código; só o texto é da IA. Se a geração falhar, cai no template.
-      const gerado = await gerarRespostaBusca(produtos, conversa);
+      const gerado = await gerarRespostaBusca(produtos, alternativas, conversa);
 
       return {
         texto: gerado ?? montarRespostaBusca(produtos),

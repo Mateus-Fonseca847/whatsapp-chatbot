@@ -45,8 +45,11 @@ for (const outro of outrosProdutos) {
 }
 verificar("sem emoji", !EMOJI.test(resposta1));
 
+// "plus size" não existe no catálogo e não pontua como parecido com nada, então esta
+// busca cai no cenário "vazio e sem alternativas" — que é o que este teste checa.
+// A busca vazia COM alternativas é coberta pelo test-similares.js.
 console.log("\n=== 2. Segunda mensagem da mesma sessão, busca sem resultado ===");
-const resposta2 = await processarMensagem(FROM, "tem alguma coisa até 20 reais?");
+const resposta2 = await processarMensagem(FROM, "e plus size, vocês têm?");
 console.log(`\n${resposta2}\n`);
 
 verificar("não repete a saudação", !resposta2.includes(SAUDACAO));
