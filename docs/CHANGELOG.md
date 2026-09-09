@@ -6,6 +6,32 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Navegação pelo catálogo** (intenção `ver_catalogo`). O bot só respondia a busca com
+  critério: quem perguntasse "o que vocês têm?" sem falar de cor, tamanho ou preço não
+  tinha por onde começar.
+
+  - `listarCategorias(catalogo)` em `catalogSearch.js` lê as categorias que o catálogo
+    realmente tem, em vez de uma lista fixa no código — quando os produtos reais da loja
+    entrarem, a resposta se ajusta sozinha.
+  - `montarRespostaCatalogo(filtros, catalogo)` cobre os dois casos: sem `categoria`,
+    oferece os segmentos existentes e pergunta qual interessa (em vez de despejar o
+    catálogo inteiro); com `categoria`, lista as peças no mesmo formato da busca, e avisa
+    claramente quando aquela categoria está sem produto.
+  - **Determinística, sem IA**, pelo mesmo motivo do carrinho: listar o que a loja tem é
+    fato, não conversa. A geração por IA já resumiu lista e omitiu preço antes; aqui isso
+    significaria esconder produto do cliente sem ninguém perceber.
+  - O reaproveitamento do `categoria` que já existia evitou campo novo no prompt: `null`
+    quando o pedido é genérico, preenchido quando o cliente indica um segmento.
+  - Listar uma categoria alimenta `ultimosProdutosMostrados`, a mesma memória que o
+    carrinho usa. Assim "quero o unicórnio" funciona logo depois de navegar pelo
+    catálogo, e não só depois de uma busca filtrada.
+  - O formato da lista de produtos saiu de `montarRespostaBusca` pra
+    `formatarListaProdutos`, usado pelos dois — busca e catálogo mostram igual, e
+    continuarão iguais quando o formato mudar.
+
+- `src/test-catalogo.js`: ver o catálogo, abrir a categoria infantil e escolher a peça
+  direto dali, sem nenhuma busca com critério no meio.
+
 - **Carrinho e fechamento de pedido** (`src/bot/cart.js` e `src/data/orders.js`, novos).
   `ver_carrinho` e `finalizar_pedido` eram placeholder ("chega em breve") e não existia
   forma de escolher uma peça: o cliente via os produtos e a conversa parava ali.

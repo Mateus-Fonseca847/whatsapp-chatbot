@@ -1,5 +1,5 @@
 import { interpretarPedido, gerarRespostaBusca } from "../services/claude.js";
-import { buscarProdutos, validarContraCatalogo } from "./catalogSearch.js";
+import { buscarProdutos, validarContraCatalogo, listarCategorias } from "./catalogSearch.js";
 import {
   obterHistorico,
   adicionarMensagem,
@@ -23,19 +23,80 @@ import { catalog } from "../data/catalog.js";
 import { SAUDACAO } from "./persona.js";
 import { formatarPreco } from "../utils/formatarPreco.js";
 
+// Quebra de linha das mensagens que vão pro cliente (WhatsApp), separada da quebra de
+// linha do arquivo-fonte. Usada pelo catálogo, pela busca e pelo carrinho.
+const eolTexto = "\n";
+
 // Fallback: texto montado pelo código, usado quando a geração pela IA falha. Feio,
 // mas sempre correto — os dados saem direto do catálogo.
+function formatarListaProdutos(produtos) {
+  return produtos
+    .map((p, i) => {
+      const tamanhosTexto = p.tamanhos.join(", ");
+      return `${i + 1}. *${p.nome}*${eolTexto}   Cor: ${p.cor} | Tamanhos: ${tamanhosTexto}${eolTexto}   ${formatarPreco(p.preco)}`;
+    })
+    .join(`${eolTexto}${eolTexto}`);
+}
+
 function montarRespostaBusca(produtos) {
   if (produtos.length === 0) {
     return "Não encontrei nenhum produto com esses critérios. Quer tentar descrever de outro jeito?";
   }
 
-  const linhas = produtos.map((p, i) => {
-    const tamanhosTexto = p.tamanhos.join(", ");
-    return `${i + 1}. *${p.nome}*\n   Cor: ${p.cor} | Tamanhos: ${tamanhosTexto}\n   ${formatarPreco(p.preco)}`;
-  });
+  return `Encontrei ${produtos.length} produto(s):${eolTexto}${eolTexto}${formatarListaProdutos(produtos)}`;
+}
 
-  return `Encontrei ${produtos.length} produto(s):\n\n${linhas.join("\n\n")}`;
+// --- Catálogo -------------------------------------------------------------
+// Determinística, como o carrinho: listar o que a loja tem é fato, não conversa. A IA
+// já resumiu lista e omitiu preço antes — aqui isso significaria esconder produto do
+// cliente sem ninguém perceber.
+
+function juntarComE(itens) {
+  if (itens.length <= 1) return itens.join("");
+  return `${itens.slice(0, -1).join(", ")} e ${itens[itens.length - 1]}`;
+}
+
+// Devolve { produtos, texto, resumo }: `produtos` é o que foi efetivamente listado, pra
+// quem chamou poder guardar como "últimos mostrados".
+export function montarRespostaCatalogo(filtros, catalogo) {
+  // Sem categoria: o cliente pediu pra ver tudo de forma genérica. Em vez de despejar o
+  // catálogo inteiro, oferece os segmentos que existem e deixa ele escolher.
+  if (!filtros?.categoria) {
+    const categorias = listarCategorias(catalogo);
+
+    if (categorias.length === 0) {
+      return {
+        produtos: [],
+        texto: "Ainda não tenho nenhuma peça cadastrada pra te mostrar.",
+        resumo: "Catálogo: vazio"
+      };
+    }
+
+    return {
+      produtos: [],
+      texto: `A gente tem pijama ${juntarComE(categorias)}. Qual desses você quer ver?`,
+      resumo: `Catálogo: categorias disponíveis — ${categorias.join(", ")}`
+    };
+  }
+
+  const produtos = buscarProdutos({ categoria: filtros.categoria }, catalogo);
+
+  if (produtos.length === 0) {
+    return {
+      produtos: [],
+      texto: `No momento não tenho nenhum pijama ${filtros.categoria} pra te mostrar. Quer ver outra categoria?`,
+      resumo: `Catálogo ${filtros.categoria}: nenhum produto`
+    };
+  }
+
+  const plural = produtos.length > 1 ? "s" : "";
+  const nomes = produtos.map((produto) => produto.nome).join(", ");
+
+  return {
+    produtos,
+    texto: `Essas são as opções de pijama ${filtros.categoria}:${eolTexto}${eolTexto}${formatarListaProdutos(produtos)}`,
+    resumo: `Catálogo ${filtros.categoria}: ${produtos.length} produto${plural} — ${nomes}`
+  };
 }
 
 // Versão enxuta do resultado, pro histórico enviado à Claude API. A resposta que vai
@@ -69,9 +130,6 @@ function buscarAlternativas(filtros, encontrados) {
 }
 
 // --- Carrinho -------------------------------------------------------------
-// Quebra de linha das mensagens que vão pro cliente (WhatsApp), separada da quebra de
-// linha do arquivo-fonte.
-const eolTexto = "\n";
 
 // As respostas de carrinho são montadas pelo código, não geradas pela IA. Aqui se fala
 // de quantidade, preço e pedido fechado: é onde um texto "quase certo" custa dinheiro.
@@ -194,6 +252,18 @@ async function montarResposta(from, filtros, conversa) {
         texto: gerado ?? montarRespostaBusca(produtos),
         resumo: resumirBusca(produtos)
       };
+    }
+
+    case "ver_catalogo": {
+      const { produtos, texto, resumo } = montarRespostaCatalogo(filtros, catalog);
+
+      // Mesma memória que o carrinho usa: depois de navegar pelo catálogo, o cliente
+      // pode dizer só "quero o unicórnio" — não precisa ter vindo de uma busca filtrada.
+      if (produtos.length > 0) {
+        salvarUltimosProdutosMostrados(from, produtos);
+      }
+
+      return { texto, resumo };
     }
 
     case "adicionar_carrinho":

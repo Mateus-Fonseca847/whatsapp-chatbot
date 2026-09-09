@@ -36,6 +36,13 @@ function corExisteNoCatalogo(cor, catalogo) {
   return catalogo.some((produto) => corBate(produto.cor, familiaCores));
 }
 
+// As categorias que o catálogo realmente tem, na ordem em que aparecem. Lida do
+// catálogo em vez de fixada no código: quando os produtos reais da loja entrarem, a
+// lista se ajusta sozinha, sem ninguém precisar lembrar de atualizar uma constante.
+export function listarCategorias(catalogo = catalog) {
+  return [...new Set((catalogo ?? []).map((produto) => produto.categoria).filter(Boolean))];
+}
+
 export function validarContraCatalogo(filtros, catalogo = catalog) {
   if (!filtros) return filtros;
 
