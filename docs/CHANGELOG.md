@@ -6,6 +6,25 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Resposta para mensagem que não é texto** (canal Baileys). Áudio, figurinha, imagem,
+  documento e localização caíam num `return` silencioso: o cliente mandava e não recebia
+  nada, o que parece bot quebrado, não bot que só não entende aquele formato.
+
+  - Resposta fixa por tipo, montada pelo código: uma para áudio ("ainda não escuto
+    áudios"), uma para vídeo, uma para localização e o aviso geral para o resto. Não
+    passa por `processarMensagem` nem `interpretarPedido` — sem custo de API e sem mexer
+    nos filtros acumulados da sessão.
+  - O tipo vem de `getContentType` da própria lib, e o conteúdo passa antes por
+    `normalizeMessageContent`, que desembrulha mensagem efêmera e "ver uma vez" — sem
+    isso, uma figurinha em chat temporário não seria reconhecida como figurinha.
+  - Só respondem os tipos que representam algo que o cliente mandou de propósito. Reação,
+    edição e evento de protocolo também chegam sem texto, e responder a eles seria falar
+    sozinho: esses continuam ignorados, agora com log dizendo o tipo.
+  - A checagem de `TEST_ALLOWED_NUMBERS` subiu para antes da leitura do conteúdo: número
+    fora da lista não recebe nem resposta de produto nem aviso de mídia. O filtro de
+    conversa individual continua onde estava.
+  - Imagem com legenda continua sendo tratada como texto, como já era.
+
 - **Navegação pelo catálogo** (intenção `ver_catalogo`). O bot só respondia a busca com
   critério: quem perguntasse "o que vocês têm?" sem falar de cor, tamanho ou preço não
   tinha por onde começar.

@@ -1,5 +1,12 @@
 import path from "node:path";
-import makeWASocket, { DisconnectReason, useMultiFileAuthState } from "@whiskeysockets/baileys";
+import makeWASocket, {
+  DisconnectReason,
+  useMultiFileAuthState,
+  isPnUser,
+  isLidUser,
+  getContentType,
+  normalizeMessageContent
+} from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
 import qrcodeImagem from "qrcode";
 
@@ -38,6 +45,33 @@ export function normalizarJid(jid) {
   return String(jid).split("@")[0].split(":")[0].replace(/\D/g, "");
 }
 
+// Resposta fixa por tipo de mídia: sem IA, sem custo de API. O cliente que manda uma
+// figurinha não fez um pedido — só precisa saber que o bot não entende aquilo ainda.
+const AVISO_SO_TEXTO =
+  "Por enquanto só consigo entender mensagens de texto — pode escrever o que você procura?";
+
+// Só os tipos que representam algo que o CLIENTE mandou de propósito. Reação, evento de
+// protocolo e afins também chegam sem texto, e responder a eles seria falar sozinho.
+const RESPOSTAS_POR_TIPO = {
+  imageMessage: AVISO_SO_TEXTO,
+  stickerMessage: AVISO_SO_TEXTO,
+  documentMessage: AVISO_SO_TEXTO,
+  documentWithCaptionMessage: AVISO_SO_TEXTO,
+  contactMessage: AVISO_SO_TEXTO,
+  contactsArrayMessage: AVISO_SO_TEXTO,
+  pollCreationMessage: AVISO_SO_TEXTO,
+  audioMessage:
+    "Ainda não escuto áudios, mas se você puder escrever o que procura, te ajudo rapidinho.",
+  videoMessage:
+    "Ainda não consigo ver vídeos, mas se você puder escrever o que procura, te ajudo rapidinho.",
+  ptvMessage:
+    "Ainda não consigo ver vídeos, mas se você puder escrever o que procura, te ajudo rapidinho.",
+  locationMessage:
+    "Ainda não consigo ler localização por aqui. Me conta por escrito o que você precisa?",
+  liveLocationMessage:
+    "Ainda não consigo ler localização por aqui. Me conta por escrito o que você precisa?"
+};
+
 // O texto pode vir em campos diferentes conforme o tipo de mensagem.
 function extrairTexto(message) {
   if (!message) return "";
@@ -50,35 +84,122 @@ function extrairTexto(message) {
   ).trim();
 }
 
-function ehGrupo(jid) {
-  return String(jid ?? "").endsWith("@g.us");
+// Lista de quem pode ser atendido durante os testes. Sem isso, o bot responderia
+// qualquer pessoa que mandar mensagem pro número pareado — que é um número pessoal real.
+function numerosAutorizados() {
+  return (process.env.TEST_ALLOWED_NUMBERS ?? "")
+    .split(",")
+    .map((numero) => normalizarJid(numero))
+    .filter(Boolean);
 }
 
-// Conversas individuais terminam em @s.whatsapp.net. Status, listas de transmissão e
-// newsletters chegam por outros domínios e não são atendimento.
-function ehConversaIndividual(jid) {
-  return String(jid ?? "").endsWith("@s.whatsapp.net");
+function estaAutorizado(numero) {
+  const autorizados = numerosAutorizados();
+
+  // Lista vazia = sem restrição, que era o comportamento antes dessa checagem existir.
+  // Uma variável esquecida em branco não deve deixar o bot mudo sem explicação.
+  if (autorizados.length === 0) {
+    console.warn("[baileys] TEST_ALLOWED_NUMBERS vazio: respondendo qualquer remetente.");
+    return true;
+  }
+
+  return autorizados.includes(numero);
+}
+
+// O WhatsApp está migrando a identificação de contatos de número de telefone (PN,
+// "5524...@s.whatsapp.net") pra LID ("123...@lid"), um id interno que NÃO é o telefone.
+// Em LID, a lib expõe o telefone real em key.remoteJidAlt; quando ele não vem, dá pra
+// consultar o mapeamento LID->PN que o próprio socket mantém.
+// Sem isso, mensagens de contatos já migrados eram descartadas em silêncio.
+async function resolverNumeroDoRemetente(sock, key) {
+  const jid = key?.remoteJid;
+
+  if (isPnUser(jid)) {
+    return { numero: normalizarJid(jid), origem: "remoteJid" };
+  }
+
+  if (isLidUser(jid)) {
+    if (isPnUser(key?.remoteJidAlt)) {
+      return { numero: normalizarJid(key.remoteJidAlt), origem: "remoteJidAlt" };
+    }
+
+    try {
+      const pn = await sock?.signalRepository?.lidMapping?.getPNForLID?.(jid);
+      if (pn) {
+        return { numero: normalizarJid(pn), origem: "lidMapping" };
+      }
+    } catch (erro) {
+      console.error("[baileys] Falha ao resolver LID -> telefone:", erro.message);
+    }
+
+    // Sem telefone, o id do LID ainda serve de chave de sessão, mas não vai bater com a
+    // lista de autorizados — e é isso que o log precisa deixar claro.
+    return { numero: normalizarJid(jid), origem: "lid-nao-resolvido" };
+  }
+
+  return null; // grupo, status, transmissão, newsletter: não é atendimento individual
 }
 
 async function tratarMensagem(sock, msg) {
   const jid = msg.key?.remoteJid;
 
   if (msg.key?.fromMe) return; // mensagem que o próprio bot enviou
-  if (ehGrupo(jid) || !ehConversaIndividual(jid)) return;
 
-  const texto = extrairTexto(msg.message);
-  if (!texto) return; // áudio, sticker, figurinha: ainda não tratamos
+  const remetente = await resolverNumeroDoRemetente(sock, msg.key);
+  if (!remetente) return; // não é conversa individual
 
-  const from = normalizarJid(jid);
-  console.log(`[baileys] Mensagem de ${from}: ${texto}`);
+  const { numero, origem } = remetente;
+
+  if (origem === "lid-nao-resolvido") {
+    console.warn(
+      `[baileys] Contato em formato LID sem telefone resolvido (${jid}). Tratando como ${numero}.`
+    );
+  }
+
+  // A autorização vem antes de olhar o conteúdo: número fora da lista não recebe nem
+  // resposta de produto nem aviso de mídia.
+  if (!estaAutorizado(numero)) {
+    console.log(`[baileys] Mensagem de ${numero} ignorada: não está na lista de autorizados`);
+    return;
+  }
+
+  // normalizeMessageContent desembrulha mensagem efêmera e "ver uma vez": sem isso, a
+  // figurinha de um chat temporário não apareceria como stickerMessage.
+  const conteudo = normalizeMessageContent(msg.message);
+  const texto = extrairTexto(conteudo);
+
+  if (!texto) {
+    const tipo = getContentType(conteudo);
+    const aviso = RESPOSTAS_POR_TIPO[tipo];
+
+    if (!aviso) {
+      // Reação, edição, evento de protocolo: chegou sem texto, mas não é uma mensagem
+      // que o cliente escreveu esperando resposta.
+      console.log(`[baileys] Mensagem de ${numero} sem texto e sem resposta prevista (tipo ${tipo}), ignorada`);
+      return;
+    }
+
+    console.log(`[baileys] Mensagem não textual de ${numero} (${tipo}): respondendo o aviso padrão`);
+
+    try {
+      // Resposta fixa: não passa por processarMensagem, então não gasta API nem mexe
+      // nos filtros acumulados da sessão.
+      await sock.sendMessage(jid, { text: aviso });
+    } catch (erro) {
+      console.error(`[baileys] Falha ao avisar ${numero} sobre mídia:`, erro.message);
+    }
+    return;
+  }
+
+  console.log(`[baileys] Mensagem de ${numero} (via ${origem}): ${texto}`);
 
   try {
-    const resposta = await processarMensagem(from, texto);
-    console.log(`[baileys] Resposta para ${from}: ${resposta}`);
+    const resposta = await processarMensagem(numero, texto);
+    console.log(`[baileys] Resposta para ${numero}: ${resposta}`);
     await sock.sendMessage(jid, { text: resposta });
   } catch (erro) {
     // Uma mensagem problemática não pode derrubar a conexão inteira
-    console.error(`[baileys] Falha ao responder ${from}:`, erro.message);
+    console.error(`[baileys] Falha ao responder ${numero}:`, erro.message);
   }
 }
 
@@ -143,6 +264,14 @@ export async function iniciarBaileys() {
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
+    // DIAGNÓSTICO TEMPORÁRIO: a key de TODA mensagem que chega, antes de qualquer
+    // filtro — inclusive as que serão descartadas por tipo logo abaixo. É o que mostra
+    // se um contato chega como @lid em vez de @s.whatsapp.net, e se alguma mensagem está
+    // sendo perdida no filtro de tipo. Remover quando o comportamento estiver confirmado.
+    for (const msg of messages) {
+      console.log(`[baileys][diag] type=${type} key:`, JSON.stringify(msg.key));
+    }
+
     // "notify" é mensagem chegando agora. "append" é sincronização de histórico — sem
     // esse filtro, o bot responderia conversas antigas ao parear.
     if (type !== "notify") return;
