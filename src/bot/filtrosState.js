@@ -5,9 +5,13 @@
 // não apaga o "inverno" que o cliente disse duas mensagens atrás, e o resultado
 // não depende do modelo repetir corretamente tudo que veio antes.
 
-// `intencao` descreve o que o cliente quer AGORA ("buscar_produto", "ver_carrinho"...),
-// então nunca é herdada da mensagem anterior — sempre vem da mensagem atual.
-const CAMPOS_NAO_HERDADOS = ["intencao"];
+// Campos que descrevem a mensagem ATUAL, não o pedido acumulado: a intenção ("quero
+// buscar" vs "quero fechar"), o produto citado agora e quantos. Herdar qualquer um deles
+// faria o bot repetir a ação anterior — adicionar de novo o mesmo item, por exemplo.
+// Exportado porque o prompt de extração também precisa deixá-los de fora do "já confirmado".
+export const CAMPOS_POR_MENSAGEM = ["intencao", "produto_mencionado", "quantidade"];
+
+const CAMPOS_NAO_HERDADOS = CAMPOS_POR_MENSAGEM;
 
 export function mesclarFiltros(anteriores, novos) {
   const base = anteriores ?? {};

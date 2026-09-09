@@ -1,6 +1,7 @@
 import axios from "axios";
 import { NOME_BOT, NOME_LOJA, TOM_DE_VOZ } from "../bot/persona.js";
 import { formatarPreco } from "../utils/formatarPreco.js";
+import { CAMPOS_POR_MENSAGEM } from "../bot/filtrosState.js";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-haiku-4-5-20251001"; // rápido e barato, ideal pra essa tarefa simples
@@ -15,20 +16,27 @@ Responda APENAS com um JSON válido, sem nenhum texto antes ou depois, neste for
   "tecido": string ou null,
   "estacao": "verao" | "inverno" | null,
   "preco_maximo": number ou null,
-  "intencao": "buscar_produto" | "ver_carrinho" | "finalizar_pedido" | "duvida_geral"
+  "produto_mencionado": string ou null,
+  "quantidade": number ou null,
+  "intencao": "buscar_produto" | "adicionar_carrinho" | "ver_carrinho" | "finalizar_pedido" | "duvida_geral"
 }
 
 Regras importantes:
 - Para categoria "infantil", se o cliente mencionar a idade da criança (ex: "8 anos", "uns 6 anininhos"), use esse número como "tamanho", já que roupas infantis geralmente são numeradas por idade.
 - Para categoria "feminino", "masculino" ou "plus size", use os tamanhos padrão (PP, P, M, G, GG) quando mencionados.
+- Use "adicionar_carrinho" quando o cliente quiser levar uma peça específica ("quero o infantil unicórnio", "vou levar dois desse", "pode colocar o floral"). Use "buscar_produto" quando ele estiver descrevendo o que procura, e não escolhendo.
+- "produto_mencionado" é o nome, ou o pedaço do nome, que o cliente citou ("infantil unicórnio", "o floral"). Copie o que ele disse, sem completar com nome de produto que ele não falou.
+- "quantidade" é quantas unidades ele pediu. Deixe null se ele não disser o número.
 - Use null nos campos que não estiverem claros na mensagem. Nunca invente informação que o cliente não disse além do que essas regras permitem.`;
 
 function montarSystemPrompt(filtrosConhecidos) {
-  // Só interessa ao modelo o que de fato está preenchido. `intencao` fica de fora:
-  // ela vale só pra mensagem em que foi dita e induziria o modelo a repeti-la.
+  // Só interessa ao modelo o que de fato está preenchido, e só o que descreve o pedido
+  // acumulado: intenção, produto citado e quantidade valem só pra mensagem em que foram
+  // ditos, e listá-los como "confirmados" induziria o modelo a repeti-los.
   const confirmados = Object.fromEntries(
     Object.entries(filtrosConhecidos ?? {}).filter(
-      ([campo, valor]) => campo !== "intencao" && valor !== null && valor !== undefined
+      ([campo, valor]) =>
+        !CAMPOS_POR_MENSAGEM.includes(campo) && valor !== null && valor !== undefined
     )
   );
 

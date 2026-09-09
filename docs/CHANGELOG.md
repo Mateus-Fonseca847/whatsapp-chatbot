@@ -6,6 +6,64 @@ Registro das mudanças relevantes do `whatsapp-loja-bot`.
 
 ### Adicionado
 
+- **Carrinho e fechamento de pedido** (`src/bot/cart.js` e `src/data/orders.js`, novos).
+  `ver_carrinho` e `finalizar_pedido` eram placeholder ("chega em breve") e não existia
+  forma de escolher uma peça: o cliente via os produtos e a conversa parava ali.
+
+  - `SYSTEM_PROMPT` ganhou a intenção `adicionar_carrinho` e os campos
+    `produto_mencionado` (o nome, ou pedaço dele, que o cliente citou) e `quantidade`
+    (1 quando não dito). Os dois entraram em `CAMPOS_POR_MENSAGEM` junto de `intencao`:
+    valem pra mensagem em que foram ditos e **não** são herdados pela próxima — senão
+    "o que tem no carrinho?" adicionaria de novo o item citado antes.
+  - `sessionStore` ganhou `carrinho` (`[{ produtoId, quantidade }]`) e
+    `ultimosProdutosMostrados`, preenchido a cada busca com resultado. É o que faz
+    "quero o infantil unicórnio" achar a peça certa: `resolverProdutoMencionado` procura
+    primeiro no que acabou de ser mostrado e só depois no catálogo inteiro.
+  - A correspondência de nome usa `normalizarTexto` e aceita ordem trocada ("unicórnio
+    infantil" também acha). Menção que cabe em mais de uma peça devolve a lista, e o bot
+    pergunta qual — em vez de escolher por conta própria.
+  - O carrinho guarda só `produtoId` e quantidade; nome e preço saem do catálogo na hora
+    de exibir, pra não congelar um preço de dias atrás.
+  - `finalizar_pedido` registra em `orders.js` (memória, como o `sessionStore`) com
+    timestamp e status `"pendente"`, esvazia o carrinho **depois** do registro e avisa
+    que o pagamento (Pix, cartão ou combinar na entrega) é acertado à parte. Nada de
+    processamento de pagamento aqui.
+  - As respostas de carrinho são montadas pelo código, não geradas pela IA. É onde se
+    fala de quantidade, preço e pedido fechado: um texto "quase certo" custa dinheiro.
+
+- `src/test-carrinho.js`: o fluxo inteiro (busca, escolha pelo nome, ver carrinho,
+  finalizar), conferindo carrinho e pedido registrado a cada etapa.
+
+- **Lista de números autorizados no canal Baileys.** `TEST_ALLOWED_NUMBERS` já existia
+  no `.env`, mas nada no código a lia — o bot respondia qualquer pessoa que mandasse
+  mensagem pro número pareado, que é um número pessoal real. Agora o remetente é
+  comparado com a lista (separada por vírgula, normalizada dos dois lados) e, fora
+  dela, a mensagem só gera log: nem `processarMensagem`, nem resposta.
+  Lista vazia continua significando "sem restrição", com aviso no log — uma variável
+  esquecida em branco não deve deixar o bot mudo sem explicação.
+
+- **Suporte ao formato LID de identificação de contato** (`@lid`). O WhatsApp está
+  migrando a identificação de número de telefone (`5524...@s.whatsapp.net`) para LID
+  (`123...@lid`), um id interno que **não é** o telefone. O canal só aceitava
+  `@s.whatsapp.net`, então mensagem de contato já migrado era descartada em silêncio —
+  provável causa de mensagens que sumiam sem log nenhum.
+
+  Na versão instalada (7.0.0-rc14) a lib oferece dois caminhos, e usamos os dois em
+  ordem: `key.remoteJidAlt`, que traz o telefone real quando o `remoteJid` é um LID
+  (equivalente individual do `participantAlt` que aparece em grupo); e, quando ele não
+  vem, `sock.signalRepository.lidMapping.getPNForLID(jid)`, o mapeamento LID→telefone
+  que o próprio socket mantém. Não resolvendo por nenhum dos dois, o id do LID vira a
+  chave de sessão e o log avisa — nesse caso o número não bate com a lista de
+  autorizados, e é melhor dizer isso do que fingir que resolveu.
+
+  A classificação de grupo, status, transmissão e newsletter passou a usar os helpers
+  da própria lib (`isPnUser`, `isLidUser`) em vez de comparar sufixo de string na mão.
+
+- **Log de diagnóstico temporário** em `messages.upsert`: imprime `type` e a `key`
+  completa de toda mensagem recebida, **antes** de qualquer filtro, inclusive as que
+  serão descartadas. É o que permite confirmar em qual formato cada contato chega.
+  Sai quando o comportamento estiver confirmado.
+
 - **Canal Baileys: o WhatsApp funcionando hoje** (`src/channels/baileysWhatsapp.js`,
   novo). Os dois canais anteriores dependem de aprovação: a Meta trava por Verificação
   da Empresa (erro 130497) e a Twilio Sandbox esbarra na mesma restrição de país. O

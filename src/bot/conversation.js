@@ -4,9 +4,20 @@ import {
   obterHistorico,
   adicionarMensagem,
   obterFiltros,
-  salvarFiltros
+  salvarFiltros,
+  obterCarrinho,
+  salvarCarrinho,
+  obterUltimosProdutosMostrados,
+  salvarUltimosProdutosMostrados
 } from "./sessionStore.js";
 import { mesclarFiltros } from "./filtrosState.js";
+import {
+  resolverProdutoMencionado,
+  adicionarAoCarrinho,
+  calcularTotalCarrinho,
+  detalharCarrinho
+} from "./cart.js";
+import { registrarPedido } from "../data/orders.js";
 import { sugerirSemelhantes, PONTUACAO_ALTA } from "./similarProducts.js";
 import { catalog } from "../data/catalog.js";
 import { SAUDACAO } from "./persona.js";
@@ -57,10 +68,108 @@ function buscarAlternativas(filtros, encontrados) {
   });
 }
 
+// --- Carrinho -------------------------------------------------------------
+// Quebra de linha das mensagens que vão pro cliente (WhatsApp), separada da quebra de
+// linha do arquivo-fonte.
+const eolTexto = "\n";
+
+// As respostas de carrinho são montadas pelo código, não geradas pela IA. Aqui se fala
+// de quantidade, preço e pedido fechado: é onde um texto "quase certo" custa dinheiro.
+
+function linhaDoItem({ produto, quantidade, subtotal }) {
+  return `${quantidade}x *${produto.nome}* — ${formatarPreco(produto.preco)} cada = ${formatarPreco(subtotal)}`;
+}
+
+function textoDoCarrinho(itens, total) {
+  const linhas = itens.map((item) => linhaDoItem(item)).join(eolTexto);
+  return `Seu carrinho:${eolTexto}${eolTexto}${linhas}${eolTexto}${eolTexto}Total: ${formatarPreco(total)}`;
+}
+
+function tratarAdicionarCarrinho(from, filtros) {
+  const mencao = filtros.produto_mencionado;
+
+  if (!mencao) {
+    const texto = "Qual peça você quer levar? Me diz o nome que eu coloco no carrinho.";
+    return { texto, resumo: "Carrinho: produto não informado" };
+  }
+
+  // Procura primeiro no que acabou de ser mostrado — "quero o unicórnio" quase sempre
+  // se refere ao que está na tela, não a um produto qualquer do catálogo.
+  const encontrado = resolverProdutoMencionado(mencao, obterUltimosProdutosMostrados(from), catalog);
+
+  if (!encontrado) {
+    const texto = `Não achei nenhuma peça como "${mencao}" por aqui. Pode me dizer o nome como aparece na lista?`;
+    return { texto, resumo: `Carrinho: "${mencao}" não encontrado` };
+  }
+
+  if (Array.isArray(encontrado)) {
+    const nomes = encontrado.map((produto) => `*${produto.nome}*`).join(", ");
+    const texto = `Achei mais de uma peça com esse nome: ${nomes}. Qual delas você quer?`;
+    return { texto, resumo: `Carrinho: "${mencao}" ambíguo entre ${encontrado.length} produtos` };
+  }
+
+  const quantidade = Number(filtros.quantidade) > 0 ? Math.floor(Number(filtros.quantidade)) : 1;
+  const carrinho = adicionarAoCarrinho(obterCarrinho(from), encontrado, quantidade);
+  salvarCarrinho(from, carrinho);
+
+  const subtotal = encontrado.preco * quantidade;
+  const total = calcularTotalCarrinho(carrinho, catalog);
+
+  const texto =
+    `Coloquei ${quantidade}x *${encontrado.nome}* no seu carrinho, ${formatarPreco(encontrado.preco)} cada` +
+    `${quantidade > 1 ? ` (${formatarPreco(subtotal)})` : ""}. ` +
+    `Seu carrinho está em ${formatarPreco(total)}. Quer levar mais alguma coisa ou já fecho o pedido?`;
+
+  return { texto, resumo: `Carrinho: +${quantidade}x ${encontrado.nome}, total ${formatarPreco(total)}` };
+}
+
+function tratarVerCarrinho(from) {
+  const itens = detalharCarrinho(obterCarrinho(from), catalog);
+
+  if (itens.length === 0) {
+    const texto = "Seu carrinho ainda está vazio. Me conta o que você procura que eu te mostro as opções.";
+    return { texto, resumo: "Carrinho: vazio" };
+  }
+
+  const total = itens.reduce((soma, item) => soma + item.subtotal, 0);
+  return {
+    texto: textoDoCarrinho(itens, total),
+    resumo: `Carrinho: ${itens.length} item(ns), total ${formatarPreco(total)}`
+  };
+}
+
+function tratarFinalizarPedido(from) {
+  const carrinho = obterCarrinho(from);
+  const itens = detalharCarrinho(carrinho, catalog);
+
+  if (itens.length === 0) {
+    const texto = "Seu carrinho está vazio, então não tenho o que fechar ainda. Quer ver alguma peça?";
+    return { texto, resumo: "Pedido: não finalizado, carrinho vazio" };
+  }
+
+  const total = calcularTotalCarrinho(carrinho, catalog);
+  const pedido = registrarPedido(from, carrinho, total);
+
+  // Carrinho esvaziado só depois do pedido registrado: se registrar falhasse, o cliente
+  // não ficaria sem o carrinho e sem o pedido.
+  salvarCarrinho(from, []);
+
+  const resumoItens = itens.map((item) => `${item.quantidade}x ${item.produto.nome}`).join(", ");
+  const texto =
+    `Pedido ${pedido.id} anotado: ${resumoItens}. Total de ${formatarPreco(total)}.` +
+    `${eolTexto}${eolTexto}O pagamento a gente combina à parte — pode ser Pix, cartão ou acertar na entrega. ` +
+    "Como você prefere?";
+
+  return {
+    texto,
+    resumo: `Pedido ${pedido.id} registrado (pendente), total ${formatarPreco(total)}`
+  };
+}
+
 // Devolve { texto, resumo }: `texto` é o que o cliente recebe, `resumo` é o que
 // guardamos como turno "assistant" no histórico. São propósitos diferentes — o cliente
 // lê linguagem natural, o modelo lê o resumo enxuto na próxima mensagem.
-async function montarResposta(filtros, conversa) {
+async function montarResposta(from, filtros, conversa) {
   if (!filtros) {
     const texto = "Desculpa, não consegui entender direito. Pode reformular sua mensagem?";
     return { texto, resumo: texto };
@@ -70,6 +179,13 @@ async function montarResposta(filtros, conversa) {
     case "buscar_produto": {
       const produtos = buscarProdutos(filtros);
       const alternativas = buscarAlternativas(filtros, produtos);
+      const mostrados = [...produtos, ...alternativas];
+
+      // Guarda o que foi mostrado (encontrados e sugeridos) pra que a próxima mensagem
+      // possa dizer só "quero o unicórnio" e a gente saber do que ela fala.
+      if (mostrados.length > 0) {
+        salvarUltimosProdutosMostrados(from, mostrados);
+      }
 
       // A busca é do código; só o texto é da IA. Se a geração falhar, cai no template.
       const gerado = await gerarRespostaBusca(produtos, alternativas, conversa);
@@ -80,11 +196,14 @@ async function montarResposta(filtros, conversa) {
       };
     }
 
+    case "adicionar_carrinho":
+      return tratarAdicionarCarrinho(from, filtros);
+
     case "ver_carrinho":
-    case "finalizar_pedido": {
-      const texto = "Essa parte do carrinho ainda está sendo construída — chega em breve!";
-      return { texto, resumo: texto };
-    }
+      return tratarVerCarrinho(from);
+
+    case "finalizar_pedido":
+      return tratarFinalizarPedido(from);
 
     case "duvida_geral": {
       const texto =
@@ -98,7 +217,6 @@ async function montarResposta(filtros, conversa) {
     }
   }
 }
-
 export async function processarMensagem(from, textoCliente) {
   const historico = obterHistorico(from);
   const filtrosConhecidos = obterFiltros(from);
@@ -122,7 +240,7 @@ export async function processarMensagem(from, textoCliente) {
 
   // A conversa que a IA vê pra escrever a resposta termina na mensagem atual do cliente
   const conversa = [...historico, { role: "user", content: textoCliente }];
-  const { texto, resumo } = await montarResposta(filtros, conversa);
+  const { texto, resumo } = await montarResposta(from, filtros, conversa);
 
   // A apresentação é prefixada pelo código, não pedida ao modelo: assim ela acontece
   // sempre na primeira mensagem, e nunca se repete no meio da conversa.

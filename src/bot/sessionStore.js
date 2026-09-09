@@ -7,6 +7,9 @@
 //   - historico: as últimas mensagens trocadas, usado como contexto da conversa
 //   - filtros: o que o cliente já confirmou (tamanho, cor, estação...), acumulado
 //     por nós e não pela IA — ver mesclarFiltros em filtrosState.js
+//   - carrinho: [{ produtoId, quantidade }] do que o cliente quer levar
+//   - ultimosProdutosMostrados: o que apareceu na última resposta, pra resolver
+//     referências como "quero o unicórnio" sem adivinhação
 
 const MAX_MENSAGENS = 10; // 5 trocas (cliente + bot); acima disso a conversa encarece cada chamada à API sem ganho
 
@@ -15,7 +18,7 @@ const sessoes = new Map();
 function obterSessao(from) {
   let sessao = sessoes.get(from);
   if (!sessao) {
-    sessao = { historico: [], filtros: null };
+    sessao = { historico: [], filtros: null, carrinho: [], ultimosProdutosMostrados: [] };
     sessoes.set(from, sessao);
   }
   return sessao;
@@ -49,8 +52,28 @@ export function salvarFiltros(from, filtros) {
   return sessao.filtros;
 }
 
-// Zera a sessão inteira: histórico de mensagens e filtros acumulados.
-// Os dois descrevem a mesma conversa, então não faz sentido descartar um e manter o outro.
+export function obterCarrinho(from) {
+  return obterSessao(from).carrinho.map((item) => ({ ...item }));
+}
+
+export function salvarCarrinho(from, carrinho) {
+  const sessao = obterSessao(from);
+  sessao.carrinho = (carrinho ?? []).map((item) => ({ ...item }));
+  return sessao.carrinho.map((item) => ({ ...item }));
+}
+
+export function obterUltimosProdutosMostrados(from) {
+  return [...obterSessao(from).ultimosProdutosMostrados];
+}
+
+export function salvarUltimosProdutosMostrados(from, produtos) {
+  const sessao = obterSessao(from);
+  sessao.ultimosProdutosMostrados = [...(produtos ?? [])];
+  return [...sessao.ultimosProdutosMostrados];
+}
+
+// Zera a sessão inteira: histórico, filtros, carrinho e últimos produtos mostrados.
+// Todos descrevem a mesma conversa, então não faz sentido descartar um e manter os outros.
 export function limparHistorico(from) {
   sessoes.delete(from);
 }
