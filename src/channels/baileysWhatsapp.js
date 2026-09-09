@@ -1,6 +1,7 @@
 import path from "node:path";
 import makeWASocket, { DisconnectReason, useMultiFileAuthState } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
+import qrcodeImagem from "qrcode";
 
 import { processarMensagem } from "../bot/conversation.js";
 
@@ -11,6 +12,10 @@ import { processarMensagem } from "../bot/conversation.js";
 
 // Credenciais da sessão pareada. Quem tem essa pasta tem acesso à conta: fica fora do git.
 const PASTA_AUTH = path.resolve("baileys_auth");
+
+// O desenho em texto depende do terminal renderizar os blocos direito, o que no Windows
+// nem sempre acontece. O PNG é o plano B: abre em qualquer visualizador de imagem.
+const ARQUIVO_QR = path.resolve("baileys-qr.png");
 
 // O logger padrão do Baileys é um pino em nível info, que despeja JSON no terminal e
 // atrapalha a leitura do QR code. Como só nos interessam avisos e erros, passamos um
@@ -99,6 +104,18 @@ export async function iniciarBaileys() {
       console.log("\n[baileys] Escaneie o QR code abaixo no WhatsApp:");
       console.log("(Configurações > Aparelhos conectados > Conectar um aparelho)\n");
       qrcode.generate(qr, { small: true });
+
+      qrcodeImagem
+        .toFile(ARQUIVO_QR, qr)
+        .then(() => {
+          console.log(
+            "\n[baileys] QR code também salvo em baileys-qr.png — abra esse arquivo se o terminal não estiver legível."
+          );
+        })
+        .catch((erro) => {
+          // Falhar aqui não impede o pareamento: o QR do terminal continua valendo
+          console.error("[baileys] Não consegui salvar o baileys-qr.png:", erro.message);
+        });
     }
 
     if (connection === "open") {
